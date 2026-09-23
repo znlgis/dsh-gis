@@ -1,0 +1,8 @@
+node_modules/
+lib/
+dist/
+.dsh-build/
+*.tsbuildinfo
+.m0-recon.mjs
+
+.git-msg.tmp

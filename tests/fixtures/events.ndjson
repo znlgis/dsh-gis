@@ -1,0 +1,4 @@
+{"type":"Feature","properties":{"id":1,"kind":"survey"},"geometry":{"type":"Point","coordinates":[100,10]}}
+{"type":"Feature","properties":{"id":2,"kind":"survey"},"geometry":{"type":"Point","coordinates":[101,11]}}
+not json at all
+{"type":"Feature","properties":{"id":3,"kind":"inspection"},"geometry":{"type":"Point","coordinates":[102,12]}}

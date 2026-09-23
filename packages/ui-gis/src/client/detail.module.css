@@ -1,0 +1,8 @@
+/* Own module for the lazy component: sharing a CSS module with the eager graph
+   would let rolldown hoist it into a shared chunk that the entry then requires
+   *synchronously*, which the client module loader cannot answer. */
+.detail {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+}

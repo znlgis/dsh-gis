@@ -1,0 +1,4 @@
+# Local development overlay: load the built plugin straight from this checkout.
+- insert:
+    - id: dsh-gis
+      name: 'D:/self/code/dsh-gis/packages/dsh-gis/lib/index.js'

@@ -1,0 +1,5 @@
+/* Plain stylesheet: the preset must compile it and inject a plugin-owned <style> tag. */
+.gis-probe-root {
+  font-family: inherit;
+  outline: 1px dashed currentColor;
+}

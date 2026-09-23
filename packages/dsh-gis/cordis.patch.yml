@@ -1,0 +1,19 @@
+# Bundle layer for @znlgis/dsh-gis.
+#
+# Row ORDER is load-bearing: gis-core publishes ctx.gis, and every row below it
+# injects that service. gis-gdal comes after gis-core for the same reason. The
+# Loader activates rows in order, and an inject that is never satisfied leaves
+# the row waiting rather than failing loudly.
+- insert:
+    - id: gis-core
+      name: '@znlgis/dsh-gis-core'
+    - id: gis-gdal
+      name: '@znlgis/dsh-gis-gdal'
+    - id: gis-purejs
+      name: '@znlgis/dsh-gis-purejs'
+    - id: tool-gis
+      name: '@znlgis/dsh-tool-gis'
+    - id: prompt-gis
+      name: '@znlgis/dsh-prompt-gis'
+    - id: dsh-ui-gis
+      name: '@znlgis/dsh-ui-gis'
