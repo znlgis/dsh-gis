@@ -162,6 +162,41 @@ function browserBuildRedirect(source: string): string | undefined {
   }
 }
 
+/**
+ * Assets imported with `?raw` become their file's TEXT.
+ *
+ * A Web Worker cannot be a plugin chunk: the loader serves chunks to the PAGE,
+ * and a worker has no `window.__ModuleLoader__` to register with. So a worker's
+ * code has to travel INSIDE a chunk as a string and be instantiated from a Blob
+ * URL -- the same trick MapLibre's own build uses for its worker (runtime
+ * contract #22, whose earlier probe verified an inlined blob worker runs in this
+ * page). This plugin is what makes such a string possible.
+ */
+function rawAssetPlugin(): TsdownPlugin {
+  const SUFFIX = '?raw'
+  return {
+    name: 'dsh-client-raw-asset',
+    resolveId(source: string) {
+      if (!source.endsWith(SUFFIX)) return null
+      const base = source.slice(0, -SUFFIX.length)
+      // A path this repository owns resolves directly; a bare specifier goes
+      // through the browser-build preference, because a package's `import`
+      // condition may hand a client bundle its Node build (contract #32) -- and
+      // that is exactly the case this asset exists for.
+      if (existsSync(base)) return base + SUFFIX
+      const redirected = browserBuildRedirect(base)
+      return redirected === undefined ? null : redirected + SUFFIX
+    },
+    async load(id: string) {
+      if (!id.endsWith(SUFFIX)) return null
+      const file = id.slice(0, -SUFFIX.length)
+      this.addWatchFile(file)
+      const text = await readFile(file, 'utf8')
+      return `export default ${JSON.stringify(text)};`
+    },
+  }
+}
+
 /** Render package-local dynamic imports through the loader's asynchronous operation. */
 function asyncChunkRequirePlugin(): TsdownPlugin {
   return {
@@ -292,6 +327,7 @@ function browserHalf(id: string, options: ClientBundleOptions = {}): UserConfig 
           )
         },
       },
+      rawAssetPlugin(),
       asyncChunkRequirePlugin(),
       {
         name: 'dsh-css-modules-inline',

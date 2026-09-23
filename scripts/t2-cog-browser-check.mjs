@@ -87,6 +87,11 @@ try {
   const page = await browser.newPage()
   const pageErrors = []
   const ranged = []
+  // The decode must happen OFF the main thread. A worker is the evidence: the
+  // capped read of a big COG measured seconds, and a page that blocks that long
+  // is the failure this check now guards against.
+  const workers = []
+  page.on('worker', (worker) => { workers.push(worker.url().slice(0, 40)) })
   page.on('pageerror', error => pageErrors.push(String(error)))
   const fetched = []
   page.on('request', (request) => {
@@ -125,6 +130,7 @@ try {
 
   const canvas = await page.locator('[data-gis-map-canvas] canvas').count()
   check(canvas > 0, 'MapLibre created a canvas for the raster', String(canvas))
+  check(workers.length > 0, 'the raster was decoded in a worker, not on the main thread', String(workers.length) + ' worker(s)')
 
   if (failures.length > 0) {
     const states = await page.locator('[data-gis-render-card]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-gis-render-card')))

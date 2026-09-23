@@ -38,9 +38,27 @@ export interface CogReadResult extends RasterImage {
  * @throws GisClientError `CRS_UNKNOWN` for a non-geographic raster.
  */
 export async function readCogImage(source: string | ArrayBuffer, options: { readonly maxSize?: number } = {}): Promise<CogReadResult> {
-  // Dynamic, through the ESM wrapper: this is what keeps the TIFF reader out of
-  // the vector card's chunk AND keeps the emitted dynamic import resolvable by
-  // the plugin loader (see ./geotiff.ts).
+  // THE WORKER FIRST. The capped read of an 8000x8000 COG measured 5259 ms on the
+  // main thread, and 2723 ms for a plain GeoTIFF -- seconds of a frozen tab for a
+  // file a user merely clicked. The worker carries the reader as text (a worker
+  // cannot import a plugin chunk) and returns pixels, so the page never blocks.
+  const { decodeInWorker, workerAvailable } = await import('./decode-worker.ts')
+  if (workerAvailable()) {
+    const raster = await decodeInWorker(source, options.maxSize ?? MAX_COG_PIXELS)
+    // The expansion is O(pixels) arithmetic; the expensive half stayed in the
+    // worker. Doing it here is also what keeps the worker free of our modules.
+    const decoded = toRgba({
+      values: raster.values,
+      bands: raster.bands,
+      bitsPerSample: raster.bitsPerSample,
+      width: raster.width,
+      ...raster.noData === null || raster.noData === undefined ? {} : { noData: Number(raster.noData) },
+    })
+    return { ...decoded, bbox: raster.bbox }
+  }
+
+  // Fallback: a page without Worker/Blob -- jsdom in the tests, an exotic embed.
+  // Its own chunk, so a browser never downloads a second copy of the reader.
   const geotiff = await import('./geotiff.ts')
   // `allowFullFile: false` is the default and is load-bearing: a server that
   // answers 200 to a range request would otherwise have its WHOLE body spliced
