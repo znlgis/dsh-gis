@@ -1,0 +1,32 @@
+feat: T2.9 — session-level map state (and the repo fix that makes checks runnable)
+
+The projection
+- gis/map unit in gis-core: schema, empty state, and a pure fold over the log
+- registered through the optional sessionProjections injection, like the
+  storage domain: a profile without the registry still has a working plugin
+- folds EXISTING tool/result events (the map description lives in their meta)
+  instead of appending a new gis/layer event, because an out-of-repo plugin
+  cannot: the persistence read path refuses unknown event types and
+  Session.append does not expose the ignorable marker, so a plugin-invented
+  type would make its own session log unreadable by another build
+- recognition is structural (mapId + basemap:'none' + layers), so another
+  tool's meta cannot masquerade as ours
+
+Verified
+- 184 node tests + 1 skipped (six new: fold semantics, replacement instead of
+  accumulation, reference preservation, hostile metas, live == replay)
+- check:mapstate (8 assertions): a real profile registers the unit and
+  publishes a value naming the layer a real gis_render drew; then the instance
+  is STOPPED, the persisted log is decoded and folded independently, and the
+  result equals the live value byte for byte
+
+Two findings
+- the persisted JSONL is a MULTI-FRAME zstd stream and neither Node decoder
+  continues past the first frame (18 KB, four frames, first one holds only the
+  session header) -- which looks exactly like "the log has no events" and
+  misled the T2.11 exit check into blaming flush timing. Frames are now split
+  by magic number.
+- .gitignore's `lib/` matched scripts/lib/, so every shared verification helper
+  was untracked: a fresh clone could not run pnpm check:* at all. Negated.
+
+Docs: T2.9 record, 38 runtime-contract traps, plan updated.

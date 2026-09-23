@@ -22,6 +22,7 @@ import { GisError } from './errors.ts'
 import { sourcePathOf } from './dataset-source.ts'
 import { DatasetRegistry, type PersistenceMode } from './registry.ts'
 import { GIS_DATASET_TABLE, GIS_DOMAIN_NAME, gisDatasetDomainSpec } from './registry-domain.ts'
+import { gisMapProjection } from './map-state.ts'
 import type { Dataset, DatasetKind, InspectResult, QueryRequest, QueryResult } from './types.ts'
 
 export { GisError, isGisError, GIS_ERROR_CODES, type GisErrorCode } from './errors.ts'
@@ -30,6 +31,15 @@ export {
   DerivedCache, type CacheEntry, type CacheStats, type DerivedCacheOptions, type PendingArtifact,
 } from './cache.ts'
 export { deriveDatasetId, type DatasetIdentity } from './dataset-id.ts'
+export {
+  applyGisMapEvent,
+  EMPTY_GIS_MAP_STATE,
+  gisMapLayerSchema,
+  gisMapProjection,
+  gisMapStateSchema,
+  type GisMapLayer,
+  type GisMapState,
+} from './map-state.ts'
 export { sourcePathOf } from './dataset-source.ts'
 export { DatasetRegistry, type PersistenceMode } from './registry.ts'
 export {
@@ -175,6 +185,15 @@ export default class GisService extends Service {
   protected [Service.init](): void {
     this.ctx.inject(['storageDomain'], (storageCtx) => {
       storageCtx.effect(() => this.openRegistryDomain(storageCtx), 'gis-core: dataset registry')
+    })
+    // The session-level map state (design 6.5, T2.9). Optional for the same
+    // reason: a profile without the projection registry must still have a
+    // working GIS plugin, and the map state is a convenience over the log.
+    this.ctx.inject(['sessionProjections'], (sessionCtx) => {
+      sessionCtx.effect(
+        () => sessionCtx.sessionProjections.register(gisMapProjection),
+        'gis-core: gis/map projection',
+      )
     })
     // Prepare the cache tree now rather than on the first request: the index is
     // a directory scan, and paying for it inside the first map render would be
