@@ -102,16 +102,24 @@ for (const entry of await readdir(ROOT, { withFileTypes: true })) {
   for (const code of text.values()) for (const target of asyncTargets(code)) fetchedByName.add(target)
 
   /**
-   * A chunk that loads other chunks is a DISPATCHER, not a leaf.
+   * Every chunk a file loads, synchronously or not.
    *
-   * Inlining one duplicates a whole dynamic graph into its requirer (and can
-   * graft a self-reference), so only leaves are inlined -- the shared runtime
-   * helpers, a decoder base class, an inflate library. Dispatch chunks keep
-   * their files, exactly like `require.async` targets.
+   * Used for the only rule that matters when inlining: a chunk must never be
+   * inlined into a chunk it can itself (transitively) load, or the requirer ends
+   * up holding a copy of ITSELF. Skipping "dispatchers" wholesale was the first
+   * attempt and it was wrong -- the shared map component is a dispatcher (it
+   * loads the raster readers on demand) AND a dependency of two preview bodies,
+   * so the bundle kept the forbidden synchronous require.
    */
-  const isDispatcher = (file) => {
-    const code = text.get(file) ?? ''
-    return /require\.async\("/u.test(code)
+  const edgesOf = (file) => [...syncTargets(text.get(file) ?? ''), ...asyncTargets(text.get(file) ?? '')]
+
+  /** Whether `from` can reach `to` through any edge. */
+  const reaches = (from, to, seen = new Set()) => {
+    if (from === to) return true
+    if (seen.has(from)) return false
+    seen.add(from)
+    for (const next of edgesOf(from)) if (text.has(next) && reaches(next, to, seen)) return true
+    return false
   }
 
   // Inline in dependency order: a target may itself require other targets, and
@@ -145,7 +153,6 @@ for (const entry of await readdir(ROOT, { withFileTypes: true })) {
   }
 
   for (const [file, requesters] of requiredBy) {
-    if (isDispatcher(file)) continue
     const initializer = initializerFor(file)
     if (initializer === undefined) continue
     let inlinedInto = 0
@@ -153,6 +160,8 @@ for (const entry of await readdir(ROOT, { withFileTypes: true })) {
       let code = text.get(requester) ?? ''
       const spec = 'require("' + './' + file + '")'
       if (!code.includes(spec)) continue
+      // The self-graft guard: never inline a chunk into something it loads.
+      if (reaches(file, requester)) continue
       code = code.split(spec).join(initializer.name)
       // The declaration goes right after the factory opens, before any use.
       const marker = 'factory: (require) => {'

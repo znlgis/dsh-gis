@@ -15,11 +15,19 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+// Declares the `sidebar.right.tab.document` slot (and its owner contract) in
+// SlotMap. TYPE-ONLY: importing the package that declares a slot is what makes
+// the key valid, and a value import from another plugin's client half is
+// forbidden by the bundle purity gate.
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
 import { GisProbeRow } from './GisProbeRow.tsx'
 import { GisRenderCardRow } from './GisRenderCardRow.tsx'
 import { GisSettingsCard } from './GisSettingsCard.tsx'
 import { GisGdalCard } from './GisGdalCard.tsx'
 import { setConfigForms } from './config-access.ts'
+import { GisBinaryPreviewRow, GisTextPreviewRow } from './preview/PreviewRows.tsx'
+import { gisBinaryPreviewDefinition, GIS_BINARY_PREVIEW_ID, gisTextPreviewDefinition, GIS_TEXT_PREVIEW_ID } from './preview/definition.ts'
+import type { DocumentPreviewRegistry } from './preview/types.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   /** This plugin's user-facing copy, addressed by the `uiGis` namespace. */
@@ -35,6 +43,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       | 'render.unavailable'
       | 'render.checking'
       | 'render.missing'
+      | 'preview.text.title'
+      | 'preview.binary.title'
+      | 'preview.unsupported'
+      | 'preview.invalid'
+      | 'preview.decoding'
   }
 }
 
@@ -81,6 +94,11 @@ export function apply(ctx: ClientContext): void {
       'render.unavailable': 'this result carries no map description',
       'render.checking': 'checking the data…',
       'render.missing': 'this data is no longer available',
+      'preview.text.title': 'Map preview',
+      'preview.binary.title': 'GIS file preview',
+      'preview.unsupported': 'this file needs a viewer the browser does not have yet',
+      'preview.invalid': 'this file could not be drawn',
+      'preview.decoding': 'reading the file…',
     },
     zh: {
       'probe.title': 'dsh-gis 探针',
@@ -93,6 +111,11 @@ export function apply(ctx: ClientContext): void {
       'render.unavailable': '这条结果没有携带地图描述',
       'render.checking': '正在确认数据…',
       'render.missing': '数据已不可用',
+      'preview.text.title': '地图预览',
+      'preview.binary.title': 'GIS 文件预览',
+      'preview.unsupported': '这个文件需要浏览器还没有的查看器',
+      'preview.invalid': '这个文件无法绘制',
+      'preview.decoding': '正在读取文件…',
     },
   }), 'ui-gis: dictionaries')
 
@@ -107,6 +130,30 @@ export function apply(ctx: ClientContext): void {
     { name: 'tool.call.toolview', key: 'gis_render', locale: NS },
     GisRenderCardRow,
   )), 'ui-gis: render toolview')
+
+  // Document previews (T2.8). Through `ctx.inject` because the document registry
+  // belongs to ANOTHER plugin's client half: a profile without it must still have
+  // a working GIS plugin (runtime contract #19), and the callback is where the
+  // late-bound service becomes reachable.
+  ctx.inject(['documentPreviews'], (previews) => {
+    const registry = (previews as unknown as { documentPreviews: DocumentPreviewRegistry }).documentPreviews
+    const t = (key: 'preview.text.title' | 'preview.binary.title', fallback: string): string => {
+      const translated = previews.locale.bind(NS)(key)
+      return translated === undefined || translated.length === 0 ? fallback : translated
+    }
+    previews.effect(() => registry.register(gisTextPreviewDefinition(() => t('preview.text.title', 'Map preview'))), 'ui-gis: text preview metadata')
+    previews.effect(() => registry.register(gisBinaryPreviewDefinition(() => t('preview.binary.title', 'GIS file preview'))), 'ui-gis: binary preview metadata')
+    // The BODY is keyed by the definition id: metadata without a body shows an
+    // empty tab, which is why the two registrations are one feature.
+    previews.effect(() => previews.slots.inject('sidebar.right.tab.document', () => previews.slots.register(
+      { name: 'sidebar.right.tab.document', key: GIS_TEXT_PREVIEW_ID, locale: NS },
+      GisTextPreviewRow,
+    )), 'ui-gis: text preview body')
+    previews.effect(() => previews.slots.inject('sidebar.right.tab.document', () => previews.slots.register(
+      { name: 'sidebar.right.tab.document', key: GIS_BINARY_PREVIEW_ID, locale: NS },
+      GisBinaryPreviewRow,
+    )), 'ui-gis: binary preview body')
+  })
 
   ctx.effect(() => ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register(
     { name: 'plugins.bundle.config', key: BUNDLE, locale: NS },

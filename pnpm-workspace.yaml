@@ -48,3 +48,4 @@ minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-client-connection@0.1.7-alpha.2 || 0.1.7-rc.1'
   - '@deepseek-ai/dsh-credentials@0.1.7-alpha.2 || 0.1.7-rc.1'
   - '@deepseek-ai/dsh-jobs@0.1.7-alpha.2 || 0.1.7-rc.1'
+  - '@deepseek-ai/dsh-client-ui-sidebar-documentpreview@0.1.7-rc.1'

@@ -71,7 +71,14 @@ export async function bootInstance(options) {
     // Otherwise the instance launches the user's default browser at a page
     // nobody asked for.
     '--no-open',
-  ], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...options.env ?? {} } })
+  ], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    // The child's cwd decides the workspace a FRESH storage root bootstraps:
+    // pointing it at the isolated work directory is what keeps a check from
+    // opening files in the user's real workspace.
+    ...options.cwd === undefined ? {} : { cwd: options.cwd },
+    env: { ...process.env, ...options.env ?? {} },
+  })
   child.stdout.pipe(stream)
   child.stderr.pipe(stream)
 

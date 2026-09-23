@@ -1,0 +1,39 @@
+/* The preview bodies: a map or an image filling the document pane, with a note
+   line for the states that have nothing to draw. */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary, currentColor);
+}
+
+.text {
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--dsw-alias-bg-layer-2, transparent);
+  border-radius: 6px;
+}
+
+.image {
+  max-width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  align-self: flex-start;
+}
