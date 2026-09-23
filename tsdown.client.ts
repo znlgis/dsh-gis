@@ -94,6 +94,43 @@ function sourceAssetPath(source: string, importer: string): string {
   return resolvePath(dirname(importer), source)
 }
 
+/**
+ * Dependencies whose package exports prefer a NODE build over the browser one.
+ *
+ * `exports` conditions are matched in the ORDER THE PACKAGE LISTS THEM, not in
+ * the order this preset asks for them -- and geotiff lists `import` before
+ * `browser`, so a client bundle gets `dist-module/geotiff.js`, which reaches
+ * `http` through `web-worker`. In a browser plugin that is fatal and LOUD but
+ * cryptic:
+ *
+ *     client-modules: require("http") missed the module table — not a platform
+ *     seed word, not a materialized module, and no registered package factory
+ *
+ * The package ships a self-contained UMD browser bundle next to it, so this
+ * points the specifier at that file. Verified: the UMD has no `http` and no
+ * worker references at all.
+ *
+ * Add an entry here only with the same evidence -- a resolution that actually
+ * picked a Node build for a browser bundle.
+ */
+const BROWSER_BUILD_PREFERENCE: Readonly<Record<string, string>> = {
+  geotiff: 'dist-browser/geotiff.js',
+}
+
+/** Replace a specifier with its package's browser build, when one is declared. */
+function browserBuildRedirect(source: string): string | undefined {
+  const relative = BROWSER_BUILD_PREFERENCE[source]
+  if (relative === undefined) return undefined
+  try {
+    const resolved = createRequire(import.meta.url).resolve(source)
+    const dir = resolved.replace(/[\\/]dist-[^\\/]+[\\/][^\\/]+$/u, '')
+    const candidate = dir + '/' + relative
+    return existsSync(candidate) ? candidate : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Render package-local dynamic imports through the loader's asynchronous operation. */
 function asyncChunkRequirePlugin(): TsdownPlugin {
   return {
@@ -194,6 +231,12 @@ function browserHalf(id: string, options: ClientBundleOptions = {}): UserConfig 
       'import.meta.env': JSON.stringify({ MODE: process.env.NODE_ENV ?? 'production' }),
     },
     plugins: [
+      {
+        name: 'dsh-client-browser-build',
+        resolveId(source: string) {
+          return browserBuildRedirect(source) ?? null
+        },
+      },
       {
         name: 'dsh-client-bundle-purity',
         resolveId(source: string) {

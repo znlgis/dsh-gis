@@ -29,20 +29,28 @@
     }
   },
   "scripts": {
-    "build": "tsc -b && tsdown"
+    "build": "node ../../scripts/clean-client-chunks.mjs && tsc -b && tsdown && node ../../scripts/flatten-client-chunks.mjs"
   },
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.4"
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/dsh-client-connection": "0.1.7-rc.1"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.4",
-    "@deepseek-ai/dsh-client-ui-renderer": "0.1.7-alpha.2",
-    "@deepseek-ai/dsh-client-ui-slots": "0.1.7-alpha.2",
-    "@deepseek-ai/dsh-client-locale": "0.1.7-alpha.2",
-    "react": "^18.2.0",
-    "@deepseek-ai/dsh-client-ui-tool": "0.1.7-alpha.2",
-    "@deepseek-ai/dsh-client-ui-plugin-manager": "0.1.7-alpha.2",
-    "@deepseek-ai/dsh-client-ui-settings": "0.1.7-alpha.2"
+    "@deepseek-ai/dsh-client-connection": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-locale": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-client-ui-tool": "0.1.7-rc.1",
+    "@types/node": "^24.0.0",
+    "geotiff": "^3.0.5",
+    "maplibre-gl": "^5.24.0",
+    "react": "^18.2.0"
+  },
+  "dependencies": {
+    "@znlgis/dsh-gis-core": "workspace:^"
   }
 }

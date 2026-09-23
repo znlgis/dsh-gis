@@ -82,13 +82,102 @@ export async function runConfined(ctx: Context, request: RunRequest): Promise<Ru
   }
 }
 
-/** Drain one piped stream to a string. */
-async function collect(stream: unknown): Promise<string> {
+/** One execution request that can be cancelled and narrates itself. */
+export interface StreamRequest extends RunRequest {
+  /**
+   * Cancellation. Passed straight to the subprocess seam, which escalates from
+   * a polite signal to a forced kill over its managed range -- so a cancelled
+   * conversion really stops converting (T2.4's \`取消\`).
+   */
+  readonly signal?: AbortSignal
+  /** Called once per complete stderr line, as it arrives. */
+  readonly onStderrLine?: (line: string) => void
+  /** Called once per complete stdout line, as it arrives. */
+  readonly onStdoutLine?: (line: string) => void
+  /**
+   * Called with raw output TEXT as it arrives, before any line splitting.
+   *
+   * This is what a progress parser needs, and the reason is GDAL: it writes
+   * `0...10...20...30...` WITHOUT line terminators, flushing as it goes. A
+   * line-based consumer sees one line at the end -- so the interface shows 0%
+   * then 100% and nothing in between, which is not "progress" at all (found by
+   * the M2 exit check, whose probe recorded exactly one progress event).
+   */
+  readonly onOutputChunk?: (text: string) => void
+}
+
+/**
+ * Run one external tool, streaming its output as it arrives.
+ *
+ * \`runConfined\` answers "what did the tool say"; a minute-long conversion needs
+ * "what is it saying NOW" plus a way to stop it, which is this function. Lines
+ * are delivered as they are produced (the progress parser is the caller's),
+ * and the same drained strings are returned so the final diagnostics survive.
+ * @param ctx - context carrying \`sandbox\` and \`subprocess\`.
+ * @param request - what to run, under what policy, and who to tell.
+ * @returns the captured result.
+ */
+export async function runStreaming(ctx: Context, request: StreamRequest): Promise<RunResult> {
+  const confined = await ctx.sandbox.confine(request.argv, {
+    mode: request.mode,
+    workspaceRoot: request.workspaceRoot,
+  })
+
+  const child = ctx.subprocess.spawn({
+    argv: confined.argv,
+    cwd: request.cwd,
+    env: request.env,
+    stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
+    graceMs: request.timeoutMs,
+    ...request.signal === undefined ? {} : { signal: request.signal },
+  })
+
+  // Both pipes must be drained while the child runs: with 'pipe' the streams are
+  // ours, and a full pipe would deadlock the child before \`done\` ever settles.
+  const [stdout, stderr] = await Promise.all([
+    collect(child.stdout, request.onStdoutLine, request.onOutputChunk),
+    collect(child.stderr, request.onStderrLine, request.onOutputChunk),
+  ])
+  const outcome = await child.done
+  return {
+    exitCode: outcome.exitCode ?? null,
+    stdout,
+    stderr,
+    completed: outcome.signal === null || outcome.signal === undefined,
+    enforcement: confined.enforcement,
+  }
+}
+
+/**
+ * Drain one piped stream to a string, optionally handing out complete lines.
+ *
+ * "Complete" is the point: GDAL's \`-progress\` writes \`0...10...20...\` without
+ * newlines, and a parser fed half a number reports a wrong percentage. The
+ * remainder stays buffered until the stream ends.
+ * @param stream - the piped stream, or nothing.
+ * @param onLine - receiver for each complete line, without its terminator.
+ * @param onChunk - receiver for the raw text, before it is split into lines.
+ * @returns everything the stream produced.
+ */
+async function collect(stream: unknown, onLine?: (line: string) => void, onChunk?: (text: string) => void): Promise<string> {
   if (stream === null || stream === undefined) return ''
   const readable = stream as AsyncIterable<Uint8Array | string>
   const chunks: string[] = []
+  let pending = ''
   for await (const chunk of readable) {
-    chunks.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
+    const text = typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk)
+    chunks.push(text)
+    onChunk?.(text)
+    if (onLine === undefined) continue
+    pending += text
+    let at = pending.search(/\r|\n/u)
+    while (at >= 0) {
+      const line = pending.slice(0, at)
+      pending = pending.slice(at + (pending[at] === '\r' && pending[at + 1] === '\n' ? 2 : 1))
+      if (line.length > 0) onLine(line)
+      at = pending.search(/\r|\n/u)
+    }
   }
+  if (onLine !== undefined && pending.length > 0) onLine(pending)
   return chunks.join('')
 }

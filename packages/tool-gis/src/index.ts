@@ -15,6 +15,7 @@ import { parseWkt, toWkt, type GeoJsonGeometry } from '@znlgis/dsh-gis-formats'
 import { encodePng } from './png.ts'
 import { rasterize } from './raster.ts'
 import { renderInspect, renderQuery, text } from './format.ts'
+import { mapDescriptionOf, mapLayersOf, renderProseOf, type RenderValue } from './map-description.ts'
 
 /** Stable Loader identity. */
 export const name = 'tool-gis'
@@ -31,11 +32,72 @@ export const inject = ['tools', 'gis']
  */
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 
+/**
+ * Ask the GDAL provider for a raster's extent and CRS.
+ *
+ * Read structurally and optionally: `tool-gis` must keep working in a profile
+ * with no GDAL row (design's optional-dependency rule), and a raster there is
+ * simply something it cannot describe.
+ * @param ctx - plugin context.
+ * @param dataset - the raster dataset.
+ * @returns its bbox in EPSG:4326 and a printable CRS.
+ * @throws GisError when no provider can report on it.
+ */
+async function rasterInfoOf(
+  ctx: Context,
+  dataset: Dataset,
+): Promise<{ readonly bbox: [number, number, number, number]; readonly crs: string }> {
+  // `ctx.get` is the OPTIONAL accessor. Reaching for `ctx.gisRuntime` directly
+  // throws "cannot get property ... without inject" -- and declaring the
+  // injection instead would make this package REQUIRE the GDAL row, which the
+  // design forbids (a pure-JS profile must still work).
+  const runtime = ctx.get('gisRuntime') as {
+    readonly rasterInfo?: (dataset: Dataset) => Promise<{ readonly bbox: [number, number, number, number]; readonly crs: string }>
+  } | undefined
+  if (runtime?.rasterInfo === undefined) {
+    throw new GisError(
+      'UNSUPPORTED_FORMAT',
+      'a raster needs the GDAL provider to report its extent',
+      'install and enable the dsh-gis GDAL row, or convert the raster to GeoJSON',
+    )
+  }
+  return runtime.rasterInfo(dataset)
+}
+
 const CONTENT_OUTPUT = {
   // `as const` keeps `type` the literal 'array'; without it the schema widens to
   // `string` and the contract can no longer tell this is a content-array output.
   schema: { type: 'array', items: { type: 'json' } } as const,
   render: (_args: unknown, value: readonly unknown[]) => value as ContentBlock[],
+}
+
+/**
+ * \`gis_render\`'s output: a value, its prose, and the persisted map card.
+ *
+ * The prose is the same text the tool produced before the card existed (a model
+ * reading a transcript sees no difference); the metadata is new, and it is what
+ * makes the card a pure function of the session log.
+ */
+const RENDER_OUTPUT = {
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      mapId: { type: 'string', required: true },
+      datasetId: { type: 'string', required: true },
+      bbox: { type: 'array', required: true, items: { type: 'number' } },
+      // `json` because it is an object OR null (a raster has no server-side
+      // plot: the card decodes it in the browser).
+      image: { type: 'json', required: true },
+      layers: { type: 'array', required: true, items: { type: 'json' } },
+      crs: { type: 'string', required: true },
+      issues: { type: 'array', required: true, items: { type: 'json' } },
+    },
+  } as const,
+  // The schema above is the contract; these two casts are the erasure of JSON
+  // schema inference (the runtime shape is the one \`execute\` returns).
+  render: (_args: unknown, value: unknown) => text(renderProseOf(value as RenderValue)),
+  presentationMeta: (_args: unknown, value: unknown) => mapDescriptionOf(value as RenderValue),
 }
 
 /** Register every GIS tool. */
@@ -142,9 +204,30 @@ export function apply(ctx: Context): void {
       bbox: { type: 'string', description: 'Extent to draw as "west,south,east,north"; defaults to the dataset extent.' },
       output: { type: 'string', description: 'File path to write; defaults to gis-render-<id>.png in the working directory.' },
     },
-    output: CONTENT_OUTPUT,
+    output: RENDER_OUTPUT,
     async execute(args) {
       const dataset = await resolve(ctx, args)
+
+      // A RASTER takes its own path: no table handler exists for it, and the
+      // picture the user sees is the one the CARD draws by range, so there is
+      // nothing to rasterize here.
+      if (dataset.kind === 'cog') {
+        const raster = await rasterInfoOf(ctx, dataset)
+        const map = mapLayersOf(dataset)
+        return {
+          mapId: 'map-' + dataset.id,
+          datasetId: dataset.id,
+          bbox: raster.bbox,
+          image: null,
+          layers: map.layers.map(layer => ({ ...layer })),
+          crs: raster.crs,
+          issues: [
+            { code: 'RASTER_DRAWN_BY_CLIENT', message: 'this is a raster: the map card reads it by range and draws it in the browser, so no server-side PNG was made' },
+            ...map.notes.map(note => ({ code: note.code, message: note.message })),
+          ],
+        }
+      }
+
       const inspection = await ctx.gis.inspect(dataset.id)
       const width = Math.min(Math.max(Math.round(args.width ?? 900), 64), 2000)
       const height = Math.min(Math.max(Math.round(args.height ?? 600), 64), 2000)
@@ -165,14 +248,34 @@ export function apply(ctx: Context): void {
       const target = resolveFilePath(process.cwd(), args.output ?? `gis-render-${dataset.id}.png`)
       await writeFile(target, png)
 
-      const warnings = inspection.issues.map(issue => `  [${issue.code}] ${issue.message}`)
-      return text([
-        `rendered ${String(raster.drawn)} of ${String(features.length)} feature(s) to ${target}`,
-        `image: ${String(raster.width)}x${String(raster.height)} px, extent [${raster.bbox.join(', ')}]`,
-        `crs: ${inspection.crs.epsg === undefined ? `${inspection.crs.name ?? 'unknown'} (unresolved)` : `EPSG:${String(inspection.crs.epsg)}`}`,
-        warnings.length === 0 ? 'no data-quality issues reported' : ['data-quality issues carried into this picture:', ...warnings].join('\n'),
-        'The picture has no scale bar or basemap. Do not quote distances or areas from it.',
-      ].join('\n'))
+      const map = mapLayersOf(dataset)
+      return {
+        mapId: 'map-' + dataset.id,
+        datasetId: dataset.id,
+        bbox: [...raster.bbox],
+        image: { path: target, width: raster.width, height: raster.height, drawn: raster.drawn, features: features.length },
+        // Plain JSON, built explicitly: the schema above is the wire contract,
+        // and a typed interface is not the same thing as a JSON value.
+        layers: map.layers.map(layer => ({
+          id: layer.id,
+          kind: layer.kind,
+          url: layer.url,
+          origin: layer.origin,
+          ...layer.style === undefined
+            ? {}
+            : {
+                style: {
+                  ...layer.style.type === undefined ? {} : { type: layer.style.type },
+                  ...layer.style.paint === undefined ? {} : { paint: { ...layer.style.paint } },
+                },
+              },
+        })),
+        crs: inspection.crs.epsg === undefined ? (inspection.crs.name ?? 'unknown') : 'EPSG:' + String(inspection.crs.epsg),
+        issues: [
+          ...inspection.issues.map(issue => ({ code: issue.code, message: issue.message })),
+          ...map.notes.map(note => ({ code: note.code, message: note.message })),
+        ],
+      }
     },
   }))
 

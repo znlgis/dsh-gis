@@ -16,6 +16,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { GisProbeRow } from './GisProbeRow.tsx'
+import { GisRenderCardRow } from './GisRenderCardRow.tsx'
 import { GisSettingsCard } from './GisSettingsCard.tsx'
 import { GisGdalCard } from './GisGdalCard.tsx'
 import { setConfigForms } from './config-access.ts'
@@ -23,7 +24,17 @@ import { setConfigForms } from './config-access.ts'
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   /** This plugin's user-facing copy, addressed by the `uiGis` namespace. */
   interface LocaleNamespaceMap {
-    uiGis: 'probe.title'
+    uiGis:
+      | 'probe.title'
+      | 'map.loading'
+      | 'map.empty'
+      | 'map.failed'
+      | 'render.running'
+      | 'render.orphan'
+      | 'render.failed'
+      | 'render.unavailable'
+      | 'render.checking'
+      | 'render.missing'
   }
 }
 
@@ -59,14 +70,43 @@ export function apply(ctx: ClientContext): void {
   setConfigForms(ctx.configForms)
 
   ctx.effect(() => ctx.locale.register(NS, {
-    en: { 'probe.title': 'dsh-gis probe' },
-    zh: { 'probe.title': 'dsh-gis 探针' },
+    en: {
+      'probe.title': 'dsh-gis probe',
+      'map.loading': 'loading map…',
+      'map.empty': 'nothing to draw yet',
+      'map.failed': 'the map could not start',
+      'render.running': 'rendering…',
+      'render.orphan': 'this render was replayed without its call, so only its result is known',
+      'render.failed': 'the render failed',
+      'render.unavailable': 'this result carries no map description',
+      'render.checking': 'checking the data…',
+      'render.missing': 'this data is no longer available',
+    },
+    zh: {
+      'probe.title': 'dsh-gis 探针',
+      'map.loading': '地图加载中…',
+      'map.empty': '暂无可绘制的图层',
+      'map.failed': '地图无法启动',
+      'render.running': '正在渲染…',
+      'render.orphan': '这条渲染没有配对调用（回放窗口裁掉了），只能显示结果',
+      'render.failed': '渲染失败',
+      'render.unavailable': '这条结果没有携带地图描述',
+      'render.checking': '正在确认数据…',
+      'render.missing': '数据已不可用',
+    },
   }), 'ui-gis: dictionaries')
 
   ctx.effect(() => ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(
     { name: 'tool.call.toolview', key: 'gis_probe', locale: NS },
     GisProbeRow,
   )), 'ui-gis: probe toolview')
+
+  // The map card for gis_render. The registered component is the eager SHIM;
+  // the card itself (and MapLibre under it) arrives in a lazy chunk.
+  ctx.effect(() => ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(
+    { name: 'tool.call.toolview', key: 'gis_render', locale: NS },
+    GisRenderCardRow,
+  )), 'ui-gis: render toolview')
 
   ctx.effect(() => ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register(
     { name: 'plugins.bundle.config', key: BUNDLE, locale: NS },

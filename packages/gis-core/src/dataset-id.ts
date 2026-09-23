@@ -18,7 +18,14 @@ export interface DatasetIdentity {
   readonly size?: number
   /** Modification time in ms of the primary member, when known. */
   readonly mtimeMs?: number
-  /** Extra members that decide identity, e.g. a shapefile family. */
+  /**
+   * Extra members that decide identity, e.g. a shapefile family.
+   *
+   * A member's ENTRY must capture its bytes, not only its name: the callers
+   * encode the member's size and mtime into the string (see
+   * `@znlgis/dsh-gis-purejs`). Names alone would keep an id stable while a
+   * `.dbf` or `.prj` edit silently changed what the dataset is.
+   */
   readonly members?: readonly string[]
 }
 

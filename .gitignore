@@ -4,5 +4,11 @@ dist/
 .dsh-build/
 *.tsbuildinfo
 .m0-recon.mjs
+# Verification fixtures generated on demand: 1.9 GiB of GeoTIFF for the M2 exit
+# gate (scripts/t2-exit-check.mjs regenerates it in ~2 s when missing).
+tests/.cache/
+# Pictures `gis_render` writes when a verification run uses the checkout as its
+# working directory: they are tool OUTPUT, not source.
+gis-render-*.png
 
 .git-msg.tmp

@@ -11,15 +11,28 @@
   "scripts": {
     "build": "pnpm -r run build",
     "test": "vitest run",
-    "lint": "echo '(lint placeholder)'"
+    "lint": "echo '(lint placeholder)'",
+    "check:bundle": "node scripts/check-client-bundle.mjs",
+    "check:browser": "node scripts/t2-browser-check.mjs",
+    "check:real": "node scripts/t1a2-real-instance.mjs && node scripts/t1a10-real-instance.mjs",
+    "check:route": "node scripts/t2-blob-route-check.mjs",
+    "test:web": "vitest run --config vitest.web.config.ts",
+    "check:e2e": "node scripts/t2-web-e2e.mjs",
+    "check:exit": "node scripts/t2-exit-check.mjs",
+    "check:cog": "node scripts/t2-cog-browser-check.mjs"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
-    "tsdown": "^0.22.2",
-    "lightningcss": "^1.32.0",
-    "vitest": "^3.0.0",
-    "react": "^18.2.0",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^24.0.0",
     "@types/react": "~18.3.1",
-    "@types/node": "^24.0.0"
+    "jsdom": "29.1.1",
+    "lightningcss": "^1.32.0",
+    "playwright-core": "^1.63.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
   }
 }

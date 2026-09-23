@@ -68,8 +68,15 @@ export interface GisIssue {
   readonly count?: number
 }
 
-/** Dataset container kinds this plugin understands. */
-export type DatasetKind = 'geojson' | 'ndjson' | 'wkt' | 'shapefile' | 'gdb' | 'postgis'
+/**
+ * Dataset container kinds this plugin understands.
+ *
+ * `cog` is a RASTER: one GeoTIFF whose bytes the browser reads by range. It is
+ * a kind rather than a flag on `geojson` because everything downstream branches
+ * on it -- the byte route serves it, the card decodes it, and no table handler
+ * has anything to say about it.
+ */
+export type DatasetKind = 'geojson' | 'ndjson' | 'wkt' | 'shapefile' | 'gdb' | 'postgis' | 'cog'
 
 /** Fields common to every dataset shape. */
 export interface DatasetBase {
@@ -82,7 +89,7 @@ export interface DatasetBase {
 
 /** A dataset held in exactly one file. */
 export interface FileDataset extends DatasetBase {
-  readonly kind: 'geojson' | 'ndjson' | 'wkt'
+  readonly kind: 'geojson' | 'ndjson' | 'wkt' | 'cog'
   readonly path: string
 }
 

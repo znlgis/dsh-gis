@@ -1,0 +1,80 @@
+/*
+ * Own module for the lazy map chunk. It must NOT be imported by anything in the
+ * eager graph: sharing a CSS module across the two graphs makes the bundler
+ * hoist it into a chunk the entry requires synchronously, which the loader
+ * protocol forbids (runtime contract #10).
+ */
+.map {
+  position: relative;
+  min-height: 320px;
+  border: 0.5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.12));
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base, #fff);
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.label {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-base, rgba(255, 255, 255, 0.8));
+  color: var(--dsw-alias-label-secondary, currentColor);
+  font-size: 11px;
+}
+
+.badge {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  z-index: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-base, rgba(255, 255, 255, 0.9));
+  color: var(--dsw-alias-label-secondary, currentColor);
+  font-size: 11px;
+}
+
+/* The card around the map: same chunk, so the two travel together. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary, currentColor);
+}
+
+.cardIssues {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary, currentColor);
+}
+
+.issues {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 1;
+  max-width: 60%;
+  margin: 0;
+  padding: 4px 6px 4px 18px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-base, rgba(255, 255, 255, 0.9));
+  color: var(--dsw-alias-label-secondary, currentColor);
+  font-size: 11px;
+  line-height: 1.4;
+}

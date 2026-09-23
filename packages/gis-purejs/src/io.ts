@@ -14,6 +14,13 @@ const KIND_BY_EXTENSION: Record<string, DatasetKind> = {
 /** Members of a shapefile family, in the order we look for them. */
 const FAMILY_EXTENSIONS = ['.shp', '.shx', '.dbf', '.prj', '.cpg'] as const
 
+/** One existing family member, with the stat that makes it part of the id. */
+interface Member {
+  readonly path: string
+  readonly size: number
+  readonly mtimeMs: number
+}
+
 /**
  * Resolve a caller-supplied path against the session working directory.
  * @param path - absolute or relative path.
@@ -56,18 +63,33 @@ export async function describeDataset(path: string): Promise<Dataset> {
   }
 
   const stem = path.slice(0, -4)
-  const siblings = await Promise.all(FAMILY_EXTENSIONS.map(async (extension) => {
+  const examined = await Promise.all(FAMILY_EXTENSIONS.map(async (extension) => {
     const candidate = stem + extension
-    try { await stat(candidate); return candidate } catch { return undefined }
+    try {
+      const member = await stat(candidate)
+      return { path: candidate, size: member.size, mtimeMs: member.mtimeMs }
+    } catch { return undefined }
   }))
-  const present = siblings.filter((value): value is string => value !== undefined)
+  const present = examined.filter((value): value is Member => value !== undefined)
 
   return {
-    id: deriveDatasetId({ path, kind, size: info.size, mtimeMs: info.mtimeMs, members: present.map(p => basename(p)) }),
+    // Every family member contributes its SIZE AND MTIME, not just its name:
+    // the .dbf holds the attributes, the .prj holds the CRS and the .cpg holds
+    // the encoding, so an edit to any of them changes what this dataset IS
+    // while the .shp itself sits untouched. Hashing bare names would hand back
+    // the same id for different data -- a silent error of the worst kind, since
+    // a stable id is exactly what makes a replayed card trust the bytes.
+    id: deriveDatasetId({
+      path,
+      kind,
+      size: info.size,
+      mtimeMs: info.mtimeMs,
+      members: present.map(member => `${basename(member.path)}@${member.size}:${member.mtimeMs}`),
+    }),
     kind: 'shapefile',
     title,
     main: path,
-    siblings: present,
+    siblings: present.map(member => member.path),
     layers: [{ name: basename(path, extname(path)) }],
   }
 }
