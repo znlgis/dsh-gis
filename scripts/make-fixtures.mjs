@@ -161,8 +161,31 @@ writeFileSync(join(OUT, 'cities-gbk.cpg'), 'GBK\n')
 // ---------- a .prj that states an EPSG authority ----------
 writeFileSync(join(OUT, 'webmercator.prj'), AUTHORITY_PRJ)
 
+// ---------- the two self-indexed containers (T2.5) ----------
+//
+// Written by GDAL rather than by hand: FlatGeobuf is a packed Hilbert R-tree and
+// PMTiles is a header plus a directory tree, and hand-writing either would test
+// our idea of the format instead of the format. GDAL both writes and reads them,
+// so the SAME bytes can be checked from the client side. Skipped loudly when GDAL
+// is absent -- a missing fixture must never look like a passing test.
+const gdalBin = process.env.GDAL_BIN ?? 'C:\\OSGeo4W\\bin'
+const containers = [
+  { format: 'FlatGeobuf', name: 'points.fgb' },
+  { format: 'PMTiles', name: 'points.pmtiles' },
+]
+for (const { format, name } of containers) {
+  const { spawnSync } = await import('node:child_process')
+  const result = spawnSync(join(gdalBin, 'ogr2ogr.exe'), [
+    '-f', format, join(OUT, name), join(OUT, 'points.geojson'),
+  ], { encoding: 'utf8', env: { ...process.env, PATH: gdalBin + ';' + (process.env.PATH ?? '') } })
+  if (result.status !== 0) {
+    console.log('SKIPPED ' + name + ': ogr2ogr ' + format + ' failed -- ' + String(result.stderr ?? '').trim().split('\n').slice(-1)[0])
+  }
+}
+
 console.log('\nfixtures written to tests/fixtures:')
-for (const name of ['points.geojson', 'projected.geojson', 'events.ndjson', 'cities-noprj.shp', 'cities-noprj.dbf', 'cities-gbk.shp', 'cities-gbk.dbf', 'cities-gbk.prj', 'cities-gbk.cpg']) {
-  const { statSync } = await import('node:fs')
+for (const name of ['points.geojson', 'projected.geojson', 'events.ndjson', 'cities-noprj.shp', 'cities-noprj.dbf', 'cities-gbk.shp', 'cities-gbk.dbf', 'cities-gbk.prj', 'cities-gbk.cpg', 'points.fgb', 'points.pmtiles']) {
+  const { statSync, existsSync } = await import('node:fs')
+  if (!existsSync(join(OUT, name))) continue
   console.log('  ' + name + '  ' + statSync(join(OUT, name)).size + ' bytes')
 }

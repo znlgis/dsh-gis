@@ -13,7 +13,7 @@
  * adds and removes them in the right order.
  */
 import type { StyleSpecification } from 'maplibre-gl'
-import { DEFAULT_THEME, describeLayers, themeTokensOf, type MapIssue, type MapThemeTokens } from './layer-model.ts'
+import { CLIENT_DECODED, DEFAULT_THEME, describeLayers, themeTokensOf, type MapIssue, type MapThemeTokens } from './layer-model.ts'
 import type { MapLibreLoader, MapLibreModule } from './load-maplibre.ts'
 import type { MapLayerSpec, MapViewSpec } from './spec.ts'
 
@@ -41,16 +41,17 @@ export interface MapViewEnvironment {
   readonly theme?: (container: HTMLElement) => MapThemeTokens
   /**
    * Draws a layer whose picture does not exist until the browser has read and
-   * decoded its bytes (a COG).
+   * decoded its bytes: a COG, a FlatGeobuf, a PMTiles archive.
    *
-   * A SEAM, not an inline call: the decoder pulls in a TIFF reader, and a
-   * controller test must not need one. The default implementation dynamically
-   * imports the real decoder, so the reader stays in its own chunk.
+   * A SEAM, not an inline call: the decoders pull in a TIFF reader and a
+   * geobuf/tile reader, and a controller test must not need them. The default
+   * implementation dynamically imports the right one, so every reader stays in
+   * its own chunk and only a card that needs it pays for it.
    * @param map - the live map.
    * @param layer - the layer to draw.
    * @returns a disposer that takes it off the map again.
    */
-  readonly addRaster?: (map: MapInstance, layer: MapLayerSpec) => Promise<() => void>
+  readonly addDecoded?: (map: MapInstance, layer: MapLayerSpec, maplibre: MapLibreModule, options: { readonly frame: boolean }) => Promise<() => void>
 }
 
 /** Construction options. */
@@ -96,6 +97,8 @@ export function createMapView(options: CreateMapViewOptions): MapView {
   let status: MapViewStatus = 'loading'
   let destroyed = false
   let map: MapInstance | undefined
+  /** The loaded library, kept so a re-draw can hand it to a decoder. */
+  let maplibreModule: MapLibreModule | undefined
   let disconnect: (() => void) | undefined
   let layers = options.spec.layers
   /** Ids this controller put on the map, so a re-draw can take them off again. */
@@ -111,7 +114,7 @@ export function createMapView(options: CreateMapViewOptions): MapView {
   }
 
   /** Replace everything this controller drew with the given layers. */
-  const draw = (target: MapInstance, next: readonly MapLayerSpec[]): void => {
+  const draw = (target: MapInstance, next: readonly MapLayerSpec[], maplibre: MapLibreModule): void => {
     // Remove first: MapLibre throws on a duplicate source id, and a leftover
     // layer would keep painting underneath the new view.
     for (const id of drawn.splice(0)) {
@@ -127,13 +130,17 @@ export function createMapView(options: CreateMapViewOptions): MapView {
       target.addLayer(description.layer)
       drawn.push(description.id)
     }
-    // Rasters come last and asynchronously: their pixels do not exist until the
-    // bytes have been ranged-read and decoded. A failure is an ISSUE, so the
-    // vector layers around it still draw -- a blank map with no explanation is
-    // the outcome this project treats as a bug.
-    const addRaster = options.environment.addRaster ?? defaultAddRaster
-    for (const layer of next.filter(candidate => candidate.kind === 'cog')) {
-      void addRaster(target, layer).then(
+    // Decoded layers come last and asynchronously: their content does not exist
+    // until the bytes have been ranged-read and parsed. A failure is an ISSUE, so
+    // the layers around them still draw -- a blank map with no explanation is the
+    // outcome this project treats as a bug.
+    const addDecoded = options.environment.addDecoded ?? defaultAddDecoded
+    // When the host stated no extent, the READER frames what it read: a
+    // self-indexed container's extent is not knowable before it is read, and
+    // showing the whole world with a dot in it is not a useful answer.
+    const frame = options.spec.bbox === undefined
+    for (const layer of next.filter(candidate => CLIENT_DECODED.has(candidate.kind))) {
+      void addDecoded(target, layer, maplibre, { frame }).then(
         (remove) => {
           if (destroyed) remove()
           else rasterRemovers.push(remove)
@@ -155,6 +162,7 @@ export function createMapView(options: CreateMapViewOptions): MapView {
   const started = options.environment.load().then(
     (maplibre) => {
       if (destroyed) return
+      maplibreModule = maplibre
       const created = new maplibre.Map({
         container: options.container,
         style: EMPTY_STYLE,
@@ -167,7 +175,7 @@ export function createMapView(options: CreateMapViewOptions): MapView {
           const [west, south, east, north] = options.spec.bbox
           created.fitBounds([[west, south], [east, north]], { padding: 24, duration: 0 })
         }
-        draw(created, layers)
+        draw(created, layers, maplibre)
         const observe = options.environment.observeResize ?? observeWithResizeObserver
         disconnect = observe(options.container, () => {
           if (!destroyed) created.resize()
@@ -186,8 +194,8 @@ export function createMapView(options: CreateMapViewOptions): MapView {
     },
     setLayers(next: readonly MapLayerSpec[]): void {
       layers = next
-      if (map === undefined || destroyed || status !== 'ready') return
-      draw(map, next)
+      if (map === undefined || destroyed || status !== 'ready' || maplibreModule === undefined) return
+      draw(map, next, maplibreModule)
     },
     async destroy(): Promise<void> {
       if (destroyed) {
@@ -210,18 +218,35 @@ export function createMapView(options: CreateMapViewOptions): MapView {
 }
 
 /**
- * The default raster drawer: the real COG decoder, behind a dynamic import.
+ * The default decoded-layer drawer: the right reader, behind a dynamic import.
  *
- * The import is the point. It keeps a TIFF reader (and its inflate tables) out
- * of the chunk that draws vectors, so a GeoJSON card never downloads it -- and
- * it is the reason this is a function rather than a top-level import (runtime
- * contract #24: a module reachable from two graphs is hoisted into a chunk other
- * chunks then require synchronously).
+ * The import is the point. It keeps a TIFF reader, a geobuf reader and a tile
+ * reader (with their inflate tables) out of the chunk that draws vectors, so a
+ * GeoJSON card never downloads any of them -- and it is why this is a function
+ * rather than three top-level imports (runtime contract #24: a module reachable
+ * from two graphs is hoisted into a chunk other chunks then require
+ * synchronously, and contract #31: such a require cannot be resolved at all).
  * @param map - the live map.
- * @param layer - the raster layer.
+ * @param layer - the layer to decode.
  * @returns a disposer.
  */
-async function defaultAddRaster(map: MapInstance, layer: MapLayerSpec): Promise<() => void> {
+async function defaultAddDecoded(
+  map: MapInstance,
+  layer: MapLayerSpec,
+  maplibre: MapLibreModule,
+  options: { readonly frame: boolean },
+): Promise<() => void> {
+  if (layer.kind === 'flatgeobuf') {
+    const { addFlatGeobufLayer } = await import('./flatgeobuf-layer.ts')
+    return addFlatGeobufLayer(map, layer, options)
+  }
+  if (layer.kind === 'pmtiles') {
+    const { addPmtilesLayer } = await import('./pmtiles-layer.ts')
+    // The MODULE is handed over rather than re-imported: a shared import here
+    // makes rolldown build a facade chunk that synchronously requires the card's
+    // chunk, which the loader cannot resolve (contract #31).
+    return addPmtilesLayer(map, layer, maplibre, options)
+  }
   const { addCogLayer } = await import('./cog-layer.ts')
   return addCogLayer(map, layer)
 }

@@ -76,7 +76,12 @@ export interface GisIssue {
  * on it -- the byte route serves it, the card decodes it, and no table handler
  * has anything to say about it.
  */
-export type DatasetKind = 'geojson' | 'ndjson' | 'wkt' | 'shapefile' | 'gdb' | 'postgis' | 'cog'
+export type DatasetKind =
+  | 'geojson' | 'ndjson' | 'wkt' | 'shapefile' | 'gdb' | 'postgis'
+  /** A raster the browser decodes by range (T2.4/T2.5). */
+  | 'cog'
+  /** Self-indexed vector containers the browser reads by range (T2.5). */
+  | 'flatgeobuf' | 'pmtiles'
 
 /** Fields common to every dataset shape. */
 export interface DatasetBase {
@@ -89,7 +94,7 @@ export interface DatasetBase {
 
 /** A dataset held in exactly one file. */
 export interface FileDataset extends DatasetBase {
-  readonly kind: 'geojson' | 'ndjson' | 'wkt' | 'cog'
+  readonly kind: 'geojson' | 'ndjson' | 'wkt' | 'cog' | 'flatgeobuf' | 'pmtiles'
   readonly path: string
 }
 

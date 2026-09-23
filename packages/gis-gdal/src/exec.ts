@@ -87,7 +87,7 @@ export interface StreamRequest extends RunRequest {
   /**
    * Cancellation. Passed straight to the subprocess seam, which escalates from
    * a polite signal to a forced kill over its managed range -- so a cancelled
-   * conversion really stops converting (T2.4's \`取消\`).
+   * conversion really stops converting (T2.4's `取消`).
    */
   readonly signal?: AbortSignal
   /** Called once per complete stderr line, as it arrives. */
@@ -109,11 +109,11 @@ export interface StreamRequest extends RunRequest {
 /**
  * Run one external tool, streaming its output as it arrives.
  *
- * \`runConfined\` answers "what did the tool say"; a minute-long conversion needs
+ * `runConfined` answers "what did the tool say"; a minute-long conversion needs
  * "what is it saying NOW" plus a way to stop it, which is this function. Lines
  * are delivered as they are produced (the progress parser is the caller's),
  * and the same drained strings are returned so the final diagnostics survive.
- * @param ctx - context carrying \`sandbox\` and \`subprocess\`.
+ * @param ctx - context carrying `sandbox` and `subprocess`.
  * @param request - what to run, under what policy, and who to tell.
  * @returns the captured result.
  */
@@ -133,7 +133,7 @@ export async function runStreaming(ctx: Context, request: StreamRequest): Promis
   })
 
   // Both pipes must be drained while the child runs: with 'pipe' the streams are
-  // ours, and a full pipe would deadlock the child before \`done\` ever settles.
+  // ours, and a full pipe would deadlock the child before `done` ever settles.
   const [stdout, stderr] = await Promise.all([
     collect(child.stdout, request.onStdoutLine, request.onOutputChunk),
     collect(child.stderr, request.onStderrLine, request.onOutputChunk),
@@ -151,7 +151,7 @@ export async function runStreaming(ctx: Context, request: StreamRequest): Promis
 /**
  * Drain one piped stream to a string, optionally handing out complete lines.
  *
- * "Complete" is the point: GDAL's \`-progress\` writes \`0...10...20...\` without
+ * "Complete" is the point: GDAL's `-progress` writes `0...10...20...` without
  * newlines, and a parser fed half a number reports a wrong percentage. The
  * remainder stays buffered until the stream ends.
  * @param stream - the piped stream, or nothing.

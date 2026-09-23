@@ -3,7 +3,7 @@
  *
  * WHY THIS EXISTS
  *
- * The client module loader resolves \`require(spec)\` against the platform seed
+ * The client module loader resolves `require(spec)` against the platform seed
  * table and the modules it has ALREADY materialized. A chunk that synchronously
  * requires a SIBLING CHUNK therefore only works if that sibling happens to be
  * loaded first -- and nothing guarantees the order. Rolldown emits exactly that
@@ -30,13 +30,13 @@
  * For every chunk that some other chunk synchronously requires, it inlines that
  * chunk's factory body into each requirer, replacing the require with the
  * inlined module object, then deletes the chunk IF nothing else needs it as a
- * file (a chunk that is also fetched with \`require.async\` stays: that path is
+ * file (a chunk that is also fetched with `require.async` stays: that path is
  * legitimate and the loader handles it).
  *
  * The result is the property the loader actually requires: **no chunk requires
- * another chunk synchronously**. \`scripts/check-client-bundle.mjs\` asserts it.
+ * another chunk synchronously**. `scripts/check-client-bundle.mjs` asserts it.
  *
- * Run after every client build: \`node scripts/flatten-client-chunks.mjs\`.
+ * Run after every client build: `node scripts/flatten-client-chunks.mjs`.
  */
 import { readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -72,7 +72,12 @@ for (const entry of await readdir(ROOT, { withFileTypes: true })) {
   const lib = join(ROOT, entry.name, 'lib')
   let files
   try {
-    files = (await readdir(lib)).filter(name => /^client\..*\.js$/u.test(name) && !name.endsWith('.map'))
+    // The ENTRY is `client.js` (no dot-name) and it MUST be scanned: it is the
+    // file that async-loads the card chunk, so leaving it out made the flattener
+    // treat the card as unreferenced and DELETE it -- the entry then asked for a
+    // chunk that no longer existed. `check:bundle` caught it as "every chunk is
+    // reachable from the entry".
+    files = (await readdir(lib)).filter(name => /^client(?:\..*)?\.js$/u.test(name) && !name.endsWith('.map'))
   } catch {
     continue
   }
@@ -95,6 +100,19 @@ for (const entry of await readdir(ROOT, { withFileTypes: true })) {
   // legitimate, and the loader resolves it by name.
   const fetchedByName = new Set()
   for (const code of text.values()) for (const target of asyncTargets(code)) fetchedByName.add(target)
+
+  /**
+   * A chunk that loads other chunks is a DISPATCHER, not a leaf.
+   *
+   * Inlining one duplicates a whole dynamic graph into its requirer (and can
+   * graft a self-reference), so only leaves are inlined -- the shared runtime
+   * helpers, a decoder base class, an inflate library. Dispatch chunks keep
+   * their files, exactly like `require.async` targets.
+   */
+  const isDispatcher = (file) => {
+    const code = text.get(file) ?? ''
+    return /require\.async\("/u.test(code)
+  }
 
   // Inline in dependency order: a target may itself require other targets, and
   // its own body must be flattened first.
@@ -127,6 +145,7 @@ for (const entry of await readdir(ROOT, { withFileTypes: true })) {
   }
 
   for (const [file, requesters] of requiredBy) {
+    if (isDispatcher(file)) continue
     const initializer = initializerFor(file)
     if (initializer === undefined) continue
     let inlinedInto = 0

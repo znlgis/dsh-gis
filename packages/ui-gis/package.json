@@ -46,8 +46,10 @@
     "@deepseek-ai/dsh-client-ui-slots": "0.1.7-rc.1",
     "@deepseek-ai/dsh-client-ui-tool": "0.1.7-rc.1",
     "@types/node": "^24.0.0",
+    "flatgeobuf": "^4.4.0",
     "geotiff": "^3.0.5",
     "maplibre-gl": "^5.24.0",
+    "pmtiles": "^4.5.0",
     "react": "^18.2.0"
   },
   "dependencies": {

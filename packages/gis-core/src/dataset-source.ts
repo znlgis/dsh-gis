@@ -22,6 +22,8 @@ export function sourcePathOf(dataset: Dataset): string | undefined {
     case 'ndjson':
     case 'wkt':
     case 'cog':
+    case 'flatgeobuf':
+    case 'pmtiles':
       return dataset.path
     case 'shapefile':
       return dataset.main

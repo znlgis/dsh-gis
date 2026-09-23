@@ -117,6 +117,37 @@ const BROWSER_BUILD_PREFERENCE: Readonly<Record<string, string>> = {
   geotiff: 'dist-browser/geotiff.js',
 }
 
+/**
+ * Node builtins a browser bundle must never actually USE.
+ *
+ * A dependency may carry a Node code path next to its browser one -- pmtiles'
+ * `FileSource` calls `require("module").createRequire` at MODULE SCOPE -- and
+ * the loader fails the whole chunk with
+ * `require("module") missed the module table`. Stubbing the builtin keeps the
+ * module loadable and makes the Node path fail only if it is ever TAKEN, which
+ * is the loud outcome we want: silently receiving `undefined` would be worse.
+ *
+ * A stub is the fallback, not the preference: when the package ships a real
+ * browser build, point at it (see {@link BROWSER_BUILD_PREFERENCE}).
+ */
+const NODE_BUILTIN_STUB = '\0dsh-node-builtin-stub'
+
+/** The builtins a client bundle may meet and must never use. */
+const NODE_BUILTINS = new Set([
+  'module', 'fs', 'fs/promises', 'path', 'http', 'https', 'stream', 'zlib', 'crypto', 'worker_threads', 'os', 'url',
+])
+
+/** The stub's body: every export throws when it is called or read. */
+function nodeBuiltinStubSource(builtin: string): string {
+  return [
+    `const fail = () => { throw new Error(${JSON.stringify('the client bundle reached the Node builtin "' + builtin + '", which a browser cannot provide')}) };`,
+    'export const createRequire = () => fail;',
+    "export const readFileSync = fail;",
+    "export const existsSync = () => false;",
+    'export default new Proxy({}, { get: () => fail });',
+  ].join('\n')
+}
+
 /** Replace a specifier with its package's browser build, when one is declared. */
 function browserBuildRedirect(source: string): string | undefined {
   const relative = BROWSER_BUILD_PREFERENCE[source]
@@ -235,6 +266,16 @@ function browserHalf(id: string, options: ClientBundleOptions = {}): UserConfig 
         name: 'dsh-client-browser-build',
         resolveId(source: string) {
           return browserBuildRedirect(source) ?? null
+        },
+      },
+      {
+        name: 'dsh-client-node-builtin-stub',
+        resolveId(source: string) {
+          return NODE_BUILTINS.has(source) ? NODE_BUILTIN_STUB + ':' + source : null
+        },
+        load(virtualId: string) {
+          if (!virtualId.startsWith(NODE_BUILTIN_STUB + ':')) return null
+          return nodeBuiltinStubSource(virtualId.slice(NODE_BUILTIN_STUB.length + 1))
         },
       },
       {

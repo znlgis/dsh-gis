@@ -170,7 +170,7 @@ try {
     // the card must show the diagnosis rather than nothing.
     //
     // In a NEW session, because the mock always names its tool call
-    // \`mock-call-1\`: a second call with that id inside one conversation makes
+    // `mock-call-1`: a second call with that id inside one conversation makes
     // the client's conversation model refuse the event feed (its own guard
     // against duplicate call ids). A harness limitation, not a plugin one.
     await rm(fixture, { force: true })

@@ -3,8 +3,8 @@
  *
  * Two projections of ONE value, and the split is the whole point:
  *
- *   - \`render\` produces the prose the MODEL reads;
- *   - \`presentationMeta\` produces a bounded, byte-free map description that is
+ *   - `render` produces the prose the MODEL reads;
+ *   - `presentationMeta` produces a bounded, byte-free map description that is
  *     PERSISTED with the tool result.
  *
  * The card is then a pure function of that persisted description: a replayed
@@ -22,12 +22,12 @@ import type { Dataset } from '@znlgis/dsh-gis-core'
  *
  * A TYPE ALIAS, not an interface, and that is load-bearing: only aliases get an
  * implicit index signature, and without one this is not assignable to the
- * contract's \`JsonValue\` (the compiler says so, precisely: "Index signature for
+ * contract's `JsonValue` (the compiler says so, precisely: "Index signature for
  * type 'string' is missing").
  */
 export type MapLayerDescription = {
   readonly id: string
-  readonly kind: 'geojson' | 'raster' | 'mvt' | 'cog'
+  readonly kind: 'geojson' | 'raster' | 'mvt' | 'cog' | 'flatgeobuf' | 'pmtiles'
   readonly url: string
   readonly origin: 'local' | 'connection' | 'service'
   /** Drawing hints, exactly the shape the client's layer model accepts. */
@@ -44,9 +44,9 @@ export type MapLayerStyle = {
 /**
  * The persisted map description (design 6.3).
  *
- * Deliberately a JSON-shaped type rather than a \`Record<string, unknown>\`: this
+ * Deliberately a JSON-shaped type rather than a `Record<string, unknown>`: this
  * value is persisted with the session log, and the tool contract types it as a
- * JSON value -- an \`unknown\`-valued record is not one.
+ * JSON value -- an `unknown`-valued record is not one.
  */
 export type MapDescription = {
   readonly mapId: string
@@ -61,13 +61,16 @@ export interface RenderIssue {
   readonly message: string
 }
 
-/** What one \`gis_render\` call produces. */
+/** What one `gis_render` call produces. */
 export interface RenderValue {
   /** Stable id for this map view; derived from the dataset id, so it replays. */
   readonly mapId: string
   readonly datasetId: string
-  /** Extent actually drawn, EPSG:4326 \`[west, south, east, north]\`. */
-  readonly bbox: readonly [number, number, number, number]
+  /**
+   * Extent to frame, EPSG:4326 `[west, south, east, north]`; EMPTY when only the
+   * client can know it (see the note on {@link MapDescription}).
+   */
+  readonly bbox: readonly number[]
   /**
    * The server-side picture, or `null` when there is none to make.
    *
@@ -95,10 +98,11 @@ const MAX_LAYERS = 8
 /**
  * The layers the browser can draw for one dataset.
  *
- * Two direct-read cases exist today: a GeoJSON file is served by the byte route
- * (T2.3) and MapLibre parses it in place, and a COG is served the same way and
- * decoded IN THE BROWSER by range (so a 2 GB raster never crosses the wire
- * whole). Everything else needs a conversion that does not exist yet, so it is
+ * Three direct-read cases exist today, all served by the byte route (T2.3):
+ * GeoJSON, which MapLibre parses in place; a COG, decoded IN THE BROWSER by
+ * range (so a 2 GB raster never crosses the wire whole); and FlatGeobuf /
+ * PMTiles, whose own spatial indexes let the client fetch only what it draws.
+ * Everything else needs a conversion that does not exist yet, so it is
  * REPORTED -- an empty map with no explanation is the failure this project keeps
  * treating as a bug.
  * @param dataset - the dataset that was rendered.
@@ -126,6 +130,14 @@ export function mapLayersOf(dataset: Dataset): { readonly layers: readonly MapLa
     // No style: a raster is drawn as pixels, not as a primitive.
     return {
       layers: [{ id: dataset.id, kind: 'cog', url: '/api/gis/blob?id=' + dataset.id, origin: 'local' }],
+      notes: [],
+    }
+  }
+  if (dataset.kind === 'flatgeobuf' || dataset.kind === 'pmtiles') {
+    // Both carry their own spatial index, so the CLIENT reads the parts it needs
+    // by range -- the host only serves the bytes.
+    return {
+      layers: [{ id: dataset.id, kind: dataset.kind, url: '/api/gis/blob?id=' + dataset.id, origin: 'local' }],
       notes: [],
     }
   }
@@ -172,14 +184,16 @@ export function mapDescriptionOf(value: RenderValue): MapDescription {
  */
 export function renderProseOf(value: RenderValue): string {
   const warnings = value.issues.map(issue => '  [' + issue.code + '] ' + issue.message)
+  const extent = value.bbox.length === 0 ? 'extent: the card frames the data itself' : 'extent [' + value.bbox.join(', ') + ']'
   const picture = value.image === null
     ? ['this dataset is a raster: the map card decodes it in the browser, so there is no server-side PNG']
     : [
         'rendered ' + String(value.image.drawn) + ' of ' + String(value.image.features) + ' feature(s) to ' + value.image.path,
-        'image: ' + String(value.image.width) + 'x' + String(value.image.height) + ' px, extent [' + value.bbox.join(', ') + ']',
+        'image: ' + String(value.image.width) + 'x' + String(value.image.height) + ' px, ' + extent,
       ]
   return [
     ...picture,
+    ...value.image === null ? [extent] : [],
     'crs: ' + value.crs,
     warnings.length === 0 ? 'no data-quality issues reported' : ['data-quality issues carried into this picture:', ...warnings].join('\n'),
     value.image === null

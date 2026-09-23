@@ -211,7 +211,7 @@ export default class GisRuntimeService extends Service {
       },
     })), 'gis-gdal: doctor tool')
 
-    // \`gis_cog\` (T2.4). Registered with the doctor tool: both are "the GDAL
+    // `gis_cog` (T2.4). Registered with the doctor tool: both are "the GDAL
     // runtime, exposed", and both need the service's binary resolution.
     ctx.effect(() => ctx.tools.register(defineTool({
       name: 'gis_cog',

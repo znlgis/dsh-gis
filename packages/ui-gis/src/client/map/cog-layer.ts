@@ -1,7 +1,7 @@
 /**
  * Drawing a COG in the browser, by range.
  *
- * The bytes stay on the server: geotiff's \`fromUrl\` sends \`Range\` requests
+ * The bytes stay on the server: geotiff's `fromUrl` sends `Range` requests
  * through the byte route, reads the file's header and the overview it needs, and
  * hands back a downsampled window. A 2 GB raster therefore costs a few hundred
  * kilobytes of traffic to display, which is the whole reason COG exists.
@@ -26,7 +26,7 @@ export const MAX_COG_PIXELS = 2048
 
 /** A decoded raster plus where it belongs. */
 export interface CogReadResult extends RasterImage {
-  /** \`[west, south, east, north]\` in EPSG:4326, from the file's own georeferencing. */
+  /** `[west, south, east, north]` in EPSG:4326, from the file's own georeferencing. */
   readonly bbox: [number, number, number, number]
 }
 
@@ -35,7 +35,7 @@ export interface CogReadResult extends RasterImage {
  * @param source - a URL to range-read, or bytes already in hand (a drop, a test).
  * @param options - the decode cap.
  * @returns the image and its extent.
- * @throws GisClientError \`CRS_UNKNOWN\` for a non-geographic raster.
+ * @throws GisClientError `CRS_UNKNOWN` for a non-geographic raster.
  */
 export async function readCogImage(source: string | ArrayBuffer, options: { readonly maxSize?: number } = {}): Promise<CogReadResult> {
   // Dynamic, through the ESM wrapper: this is what keeps the TIFF reader out of
@@ -83,7 +83,7 @@ export async function readCogImage(source: string | ArrayBuffer, options: { read
 /**
  * Draw one raster layer onto a live map.
  * @param map - the map.
- * @param layer - the layer; its \`url\` is range-read.
+ * @param layer - the layer; its `url` is range-read.
  * @returns a disposer that removes the layer and its source.
  */
 export async function addCogLayer(map: MapInstance, layer: MapLayerSpec): Promise<() => void> {

@@ -86,7 +86,17 @@ export interface LayerDescription {
   readonly layer: AddLayerObject
 }
 
-const KINDS: readonly MapLayerKind[] = ['geojson', 'raster', 'mvt', 'cog']
+const KINDS: readonly MapLayerKind[] = ['geojson', 'raster', 'mvt', 'cog', 'flatgeobuf', 'pmtiles']
+
+/**
+ * The kinds the CLIENT reads itself, by range, and therefore cannot describe
+ * synchronously.
+ *
+ * They still appear in a normalized view -- the card counts them as layers, and
+ * MapLibre is told nothing about them until their bytes have been read. The
+ * controller draws them through its decoded-layer seam.
+ */
+export const CLIENT_DECODED: ReadonlySet<MapLayerKind> = new Set<MapLayerKind>(['cog', 'flatgeobuf', 'pmtiles'])
 const ORIGINS: readonly LayerOrigin[] = ['local', 'connection', 'service']
 const PRIMITIVES: readonly NonNullable<MapLayerStyle['type']>[] = ['circle', 'line', 'fill']
 
@@ -179,12 +189,12 @@ export function describeLayers(
   const descriptions: LayerDescription[] = []
   const issues: MapIssue[] = []
   for (const layer of layers) {
-    // A `cog` layer has no synchronous description: its pixels do not exist
-    // until the browser has ranged-read and decoded the file, which the
-    // controller does through its raster seam. Describing it here would fetch
-    // the raster as if it were GeoJSON -- a bug that looked like "the raster
-    // never loads" and cost a debugging round.
-    if (layer.kind === 'cog') continue
+    // A client-decoded layer has no synchronous description: its pixels or
+    // features do not exist until the browser has ranged-read and parsed the
+    // file, which the controller does through its decoded-layer seam.
+    // Describing one here would fetch the container as if it were GeoJSON -- a
+    // bug that looked like "the layer never loads" and cost a debugging round.
+    if (CLIENT_DECODED.has(layer.kind)) continue
     if (layer.kind === 'mvt' && (layer.sourceLayer === undefined || layer.sourceLayer.length === 0)) {
       issues.push({
         code: 'LAYER_SOURCE_LAYER_MISSING',
@@ -305,6 +315,10 @@ function normalizeBbox(value: unknown, issues: MapIssue[]): readonly [number, nu
   if (value === undefined) return undefined
   const usable = Array.isArray(value) && value.length === 4 && value.every(item => typeof item === 'number' && Number.isFinite(item))
   if (!usable) {
+    // An EMPTY extent is not a defect: it is how a host says "the client knows the
+    // extent and will frame it" (a self-indexed container states none before it is
+    // read). Complaining here would put a warning on a correct card.
+    if (Array.isArray(value) && value.length === 0) return undefined
     issues.push({ code: 'BBOX_INVALID', message: 'the extent is not four finite numbers; the view is not framed' })
     return undefined
   }

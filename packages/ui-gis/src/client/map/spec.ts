@@ -16,7 +16,7 @@
  * GeoTIFF through the byte route and draws the window it needs, which is what
  * lets a 2 GB raster appear without being downloaded.
  */
-export type MapLayerKind = 'geojson' | 'raster' | 'mvt' | 'cog'
+export type MapLayerKind = 'geojson' | 'raster' | 'mvt' | 'cog' | 'flatgeobuf' | 'pmtiles'
 
 /**
  * Where the data comes from. The component treats every origin identically --

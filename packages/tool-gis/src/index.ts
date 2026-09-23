@@ -72,7 +72,7 @@ const CONTENT_OUTPUT = {
 }
 
 /**
- * \`gis_render\`'s output: a value, its prose, and the persisted map card.
+ * `gis_render`'s output: a value, its prose, and the persisted map card.
  *
  * The prose is the same text the tool produced before the card existed (a model
  * reading a transcript sees no difference); the metadata is new, and it is what
@@ -95,7 +95,7 @@ const RENDER_OUTPUT = {
     },
   } as const,
   // The schema above is the contract; these two casts are the erasure of JSON
-  // schema inference (the runtime shape is the one \`execute\` returns).
+  // schema inference (the runtime shape is the one `execute` returns).
   render: (_args: unknown, value: unknown) => text(renderProseOf(value as RenderValue)),
   presentationMeta: (_args: unknown, value: unknown) => mapDescriptionOf(value as RenderValue),
 }
@@ -208,21 +208,31 @@ export function apply(ctx: Context): void {
     async execute(args) {
       const dataset = await resolve(ctx, args)
 
-      // A RASTER takes its own path: no table handler exists for it, and the
-      // picture the user sees is the one the CARD draws by range, so there is
-      // nothing to rasterize here.
-      if (dataset.kind === 'cog') {
-        const raster = await rasterInfoOf(ctx, dataset)
+      // The CLIENT-DECODED kinds take their own path: no table handler exists for
+      // them (that is the point -- the browser reads them by range), and the
+      // picture the user sees is the one the card draws, so there is nothing to
+      // rasterize on this side.
+      if (dataset.kind === 'cog' || dataset.kind === 'flatgeobuf' || dataset.kind === 'pmtiles') {
         const map = mapLayersOf(dataset)
+        // A raster's extent is something GDAL can state; a self-indexed vector
+        // container's is not, and pretending otherwise would frame the map on a
+        // guess. An EMPTY extent means "the client frames it from the data" --
+        // which is exactly what these readers do.
+        const raster = dataset.kind === 'cog' ? await rasterInfoOf(ctx, dataset) : undefined
         return {
           mapId: 'map-' + dataset.id,
           datasetId: dataset.id,
-          bbox: raster.bbox,
+          bbox: raster === undefined ? [] : [...raster.bbox],
           image: null,
           layers: map.layers.map(layer => ({ ...layer })),
-          crs: raster.crs,
+          crs: raster?.crs ?? 'as stored (the browser reads the file directly)',
           issues: [
-            { code: 'RASTER_DRAWN_BY_CLIENT', message: 'this is a raster: the map card reads it by range and draws it in the browser, so no server-side PNG was made' },
+            {
+              code: 'DRAWN_BY_CLIENT',
+              message: dataset.kind === 'cog'
+                ? 'this is a raster: the map card reads it by range and draws it in the browser, so no server-side PNG was made'
+                : 'this container carries its own spatial index: the map card reads the parts it draws, so no server-side PNG was made',
+            },
             ...map.notes.map(note => ({ code: note.code, message: note.message })),
           ],
         }

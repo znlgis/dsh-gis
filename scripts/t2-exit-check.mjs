@@ -3,7 +3,7 @@
  *
  * The gate's own words: "首次转换有进度可取消；再次 <= 1.5 s；回放一致；
  * isError/call===null/id 404 三种降级不抛异常；首屏无 MapLibre chunk".
- * Three of those five are already asserted by \`check:e2e\` and the DOM lane
+ * Three of those five are already asserted by `check:e2e` and the DOM lane
  * (replay, the degradations, the first screen). This script takes the two that
  * need a big file and a real instance:
  *

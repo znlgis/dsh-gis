@@ -46,6 +46,18 @@ describe('what the browser can draw today', () => {
     })
   })
 
+  it('hands the self-indexed containers to the browser too', () => {
+    // FlatGeobuf and PMTiles carry their own spatial indexes: the host serves the
+    // bytes and the client reads only the parts it draws.
+    for (const kind of ['flatgeobuf', 'pmtiles'] as const) {
+      const dataset: Dataset = { id: 'ds_' + kind, kind, title: 'points.' + kind, path: 'C:/data/points.' + kind, layers: [{ name: 'points' }] }
+      expect(mapLayersOf(dataset), kind).toEqual({
+        layers: [{ id: 'ds_' + kind, kind, url: '/api/gis/blob?id=ds_' + kind, origin: 'local' }],
+        notes: [],
+      })
+    }
+  })
+
   it('says so when a raster has no server-side picture, instead of inventing one', () => {
     const prose = renderProseOf(value({ image: null, crs: 'EPSG:4326' }))
     expect(prose).toContain('decodes it in the browser')

@@ -70,6 +70,11 @@ function contentTypeOf(dataset: Dataset): string {
     // `image/tiff` is what a COG is; the browser ranges-reads it, and a wrong
     // type here would make a reader refuse bytes it can actually use.
     case 'cog': return 'image/tiff'
+    // No media type worth naming for the two self-indexed containers: the client
+    // decides by the LAYER KIND it was given, and a wrong type would only invite
+    // a reader that cannot parse these to try.
+    case 'flatgeobuf':
+    case 'pmtiles': return 'application/octet-stream'
     // Containers and shapefile members have no meaningful media type of their
     // own; the browser decides by the layer kind it was given, not by this.
     case 'shapefile':

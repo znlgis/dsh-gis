@@ -19,7 +19,8 @@
     "test:web": "vitest run --config vitest.web.config.ts",
     "check:e2e": "node scripts/t2-web-e2e.mjs",
     "check:exit": "node scripts/t2-exit-check.mjs",
-    "check:cog": "node scripts/t2-cog-browser-check.mjs"
+    "check:cog": "node scripts/t2-cog-browser-check.mjs",
+    "check:vector": "node scripts/t2-vector-check.mjs"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",

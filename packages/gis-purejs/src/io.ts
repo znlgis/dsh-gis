@@ -9,6 +9,12 @@ const KIND_BY_EXTENSION: Record<string, DatasetKind> = {
   '.ndjson': 'ndjson', '.geojsonl': 'ndjson', '.jsonl': 'ndjson',
   '.wkt': 'wkt',
   '.shp': 'shapefile',
+  // Read BY THE BROWSER, not here: both carry their own spatial index, so the
+  // client ranges-reads the features or tiles it needs instead of the whole
+  // file. This provider's job for them is identity and the byte route -- no
+  // parsing, which is also why they need no GDAL.
+  '.fgb': 'flatgeobuf',
+  '.pmtiles': 'pmtiles',
 }
 
 /** Members of a shapefile family, in the order we look for them. */
@@ -55,7 +61,7 @@ export async function describeDataset(path: string): Promise<Dataset> {
   if (kind !== 'shapefile') {
     return {
       id: deriveDatasetId({ path, kind, size: info.size, mtimeMs: info.mtimeMs }),
-      kind: kind as 'geojson' | 'ndjson' | 'wkt',
+      kind: kind as 'geojson' | 'ndjson' | 'wkt' | 'flatgeobuf' | 'pmtiles',
       title,
       path,
       layers: [{ name: basename(path, extname(path)) }],

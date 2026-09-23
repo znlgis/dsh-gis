@@ -49,8 +49,10 @@ const storedDatasetSchema = z.discriminatedUnion('kind', [
   z.object({ ...storedBase, kind: z.literal('geojson'), path: z.string() }),
   z.object({ ...storedBase, kind: z.literal('ndjson'), path: z.string() }),
   z.object({ ...storedBase, kind: z.literal('wkt'), path: z.string() }),
-  // A COG is one file, like the text formats: the same shape, its own kind.
+  // One file, like the text formats: the same shape, their own kinds.
   z.object({ ...storedBase, kind: z.literal('cog'), path: z.string() }),
+  z.object({ ...storedBase, kind: z.literal('flatgeobuf'), path: z.string() }),
+  z.object({ ...storedBase, kind: z.literal('pmtiles'), path: z.string() }),
   z.object({ ...storedBase, kind: z.literal('shapefile'), main: z.string(), siblings: z.array(z.string()) }),
   z.object({ ...storedBase, kind: z.literal('gdb'), dir: z.string() }),
   z.object({ ...storedBase, kind: z.literal('postgis'), profile: z.string() }),
@@ -87,6 +89,8 @@ export function toStoredDataset(dataset: Dataset): StoredDataset {
     case 'ndjson':
     case 'wkt':
     case 'cog':
+    case 'flatgeobuf':
+    case 'pmtiles':
       return { ...base, kind: dataset.kind, path: dataset.path }
     case 'shapefile':
       return { ...base, kind: 'shapefile', main: dataset.main, siblings: [...dataset.siblings] }
@@ -114,6 +118,8 @@ export function toDataset(record: StoredDataset): Dataset {
     case 'ndjson':
     case 'wkt':
     case 'cog':
+    case 'flatgeobuf':
+    case 'pmtiles':
       return { ...base, kind: record.kind, path: record.path }
     case 'shapefile':
       return { ...base, kind: 'shapefile', main: record.main, siblings: [...record.siblings] }

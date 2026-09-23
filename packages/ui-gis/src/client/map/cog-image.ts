@@ -14,7 +14,7 @@ import { GisClientError } from './client-error.ts'
 export interface RasterImage {
   readonly width: number
   readonly height: number
-  /** RGBA, 4 bytes per pixel, row-major -- the shape \`ImageData\` wants. */
+  /** RGBA, 4 bytes per pixel, row-major -- the shape `ImageData` wants. */
   readonly rgba: Uint8ClampedArray
 }
 
@@ -98,7 +98,7 @@ export function toRgba(samples: RasterSamples): RasterImage {
  * The read size for a raster that must not be decoded whole.
  *
  * A 26000x26000 COG is 676 Mpx: decoding it to draw a thumbnail would freeze the
- * tab and allocate gigabytes. The cap holds the LONGER edge at \`maxSize\` and
+ * tab and allocate gigabytes. The cap holds the LONGER edge at `maxSize` and
  * preserves the aspect ratio, so the reader asks for a downsampled window --
  * which geotiff serves from the file's own overviews instead of the full
  * resolution tiles. That is the difference between a 40 ms read and a 40 s one.
@@ -116,13 +116,13 @@ export function planReadSize(width: number, height: number, maxSize: number): { 
 }
 
 /**
- * The MapLibre \`image\` source coordinates for a raster's extent.
+ * The MapLibre `image` source coordinates for a raster's extent.
  *
  * MapLibre wants them in a fixed order -- top-left, top-right, bottom-right,
  * bottom-left -- and getting it wrong draws the raster mirrored or transposed,
  * which looks like a projection bug and is not one.
- * @param bbox - \`[west, south, east, north]\` in EPSG:4326.
- * @returns four \`[lng, lat]\` corners, clockwise from the top left.
+ * @param bbox - `[west, south, east, north]` in EPSG:4326.
+ * @returns four `[lng, lat]` corners, clockwise from the top left.
  */
 export function imageCoordinates(bbox: readonly [number, number, number, number]): [[number, number], [number, number], [number, number], [number, number]] {
   const [west, south, east, north] = bbox
