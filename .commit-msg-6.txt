@@ -1,0 +1,38 @@
+feat: T3.1 — PostGIS connection profiles that cannot carry a secret
+
+The DoD ("no plaintext password in configuration; describe() says configured
+only") is made MECHANICAL rather than documented: the profile schema is a strict
+object with no password key at all, so a patch carrying one fails to load and
+names the key it did not expect.
+
+What landed (packages/gis-postgis, new)
+- config: host/port/database/user, a credentials REFERENCE, ssl and the two
+  timeouts. Nothing else, so there is nowhere to write a secret down.
+- profiles: describe() asks the credentials service whether a reference is
+  CONFIGURED and never resolves it; resolve() is the single place a value is
+  read; redact() strips secrets from driver-style messages before they travel.
+- the service is published as ctx.gisPostgis through an optional ctx.inject, so
+  a profile without credentials still has working GIS tools (contract #19).
+
+Verified: 205 node tests + 1 skipped, nine of them new -- the strict-schema
+refusals (two shapes), the defaults, a recorded call sequence proving describe()
+never resolves, and a REAL LocalCredentialProvider round trip that stores a
+secret, reports configured, resolves it, and has it redacted out of a
+connection-string error. The same module was confirmed to register correctly in
+an isolated cordis context.
+
+NOT closed, and recorded rather than papered over: the Loader row for this
+package did not publish the service in a real instance (the probe loaded, the
+service was absent, and the log carried no warning), while the same artifact
+registers fine through ctx.plugin in isolation. The check script that
+demonstrated this was deleted instead of committed red; docs/T3.1-执行记录.md
+lists the leads for T3.2, which starts there.
+
+Also: the bundle row is deliberately NOT mounted yet -- adding a row for a new
+package makes every existing profile warn "failed to import" until it is
+re-installed, so the row lands together with that step.
+
+Two traps learned the hard way, now contracts #42 and #43: a row that fails to
+assemble can be SILENT, and a build with no output is not a successful build
+(the new package had no tsdown.config.ts, so tsdown wrote dist/ while main
+pointed at lib/ -- three rounds lost to reading "no error lines" as success).

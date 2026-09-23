@@ -11,6 +11,10 @@
       name: '@znlgis/dsh-gis-gdal'
     - id: gis-purejs
       name: '@znlgis/dsh-gis-purejs'
+    # NOTE for T3.2: the gis-postgis row is deliberately NOT mounted yet. Adding a
+    # row for a NEW package makes every existing profile warn "failed to import"
+    # until it is re-installed, so the row lands together with that step rather
+    # than ahead of it.
     - id: tool-gis
       name: '@znlgis/dsh-tool-gis'
     - id: prompt-gis

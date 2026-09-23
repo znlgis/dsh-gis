@@ -37,6 +37,8 @@
     "@deepseek-ai/schemastery": "~3.18.4"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "~3.18.4"
-  }
+    "@deepseek-ai/schemastery": "~3.18.4",
+    "@znlgis/dsh-gis-postgis": "workspace:^"
+  },
+  "_comment_postgis": "The dependency is declared so a profile re-install links it; the ROW waits for T3.2 (see cordis.patch.yml)."
 }

@@ -1,0 +1,36 @@
+{
+  "name": "@znlgis/dsh-gis-postgis",
+  "version": "0.1.0",
+  "description": "PostGIS provider: connection profiles that reference credentials instead of carrying secrets",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "scripts": {
+    "build": "tsc -b && tsdown"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@znlgis/dsh-gis-core": "workspace:^",
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/dsh-credentials": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-credentials-local": "0.1.7-rc.1",
+    "@types/node": "^24.0.0"
+  }
+}
