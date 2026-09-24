@@ -108,11 +108,17 @@ export class PostgisProfileError extends Error {
 export class PostgisProfiles {
   /**
    * @param config - validated configuration.
-   * @param credentials - the credentials service, when the profile mounts one.
+   * @param credentialsOf - a GETTER for the credentials service, not the service
+   *   itself. Late binding is load-bearing: this object is built while its own row
+   *   activates, and the credentials row may activate after it. Reading the
+   *   service once in the constructor made every profile report "unavailable" in a
+   *   real instance while the same configuration passed every unit test -- the
+   *   tests handed the resolver in directly, which is the difference the instance
+   *   exposed.
    */
   constructor(
     private readonly config: PostgisConfig,
-    private readonly credentials: CredentialsResolver | undefined = undefined,
+    private readonly credentialsOf: () => CredentialsResolver | undefined = () => undefined,
   ) {}
 
   /** Every configured profile name, in configuration order. */
@@ -196,10 +202,11 @@ export class PostgisProfiles {
     const base = this.connectionOf(profile)
     const settings = this.settingsOf(profile) as PostgisProfileSettings
     if (settings.credential === undefined) return base
-    if (this.credentials === undefined) {
+    const credentials = this.credentialsOf()
+    if (credentials === undefined) {
       throw new PostgisProfileError(profile, 'its credential "' + settings.credential + '" cannot be resolved because this profile mounts no credentials service')
     }
-    const resolved = await this.credentials.resolve(asRef(settings.credential))
+    const resolved = await credentials.resolve(asRef(settings.credential))
     if (resolved === undefined) {
       throw new PostgisProfileError(profile, 'its credential "' + settings.credential + '" is not configured')
     }
@@ -224,8 +231,9 @@ export class PostgisProfiles {
   /** Whether one profile's credential reference is currently satisfied. */
   private async credentialState(settings: PostgisProfileSettings): Promise<CredentialState> {
     if (settings.credential === undefined) return 'not-required'
-    if (this.credentials === undefined) return 'unavailable'
-    const info = await this.credentials.describe(asRef(settings.credential))
+    const credentials = this.credentialsOf()
+    if (credentials === undefined) return 'unavailable'
+    const info = await credentials.describe(asRef(settings.credential))
     return info.configured ? 'configured' : 'missing'
   }
 }

@@ -21,7 +21,8 @@
     "check:exit": "node scripts/t2-exit-check.mjs",
     "check:cog": "node scripts/t2-cog-browser-check.mjs",
     "check:vector": "node scripts/t2-vector-check.mjs",
-    "check:mapstate": "node scripts/t2-mapstate-check.mjs"
+    "check:mapstate": "node scripts/t2-mapstate-check.mjs",
+    "check:postgis": "node scripts/t3-postgis-check.mjs"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",

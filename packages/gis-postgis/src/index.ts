@@ -29,7 +29,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /** Connection profiles, with credential resolution when the profile has one. */
-export class PostgisService extends Service {
+export default class PostgisService extends Service {
   /** The resolved configuration. */
   readonly config: PostgisConfig
   /** The profile resolver, published for the tasks that will connect. */
@@ -41,11 +41,15 @@ export class PostgisService extends Service {
    */
   constructor(ctx: Context, config: PostgisConfig) {
     super(ctx, 'gisPostgis')
-    this.config = postgisConfigSchema.parse(config)
-    // \`credentials\` is read LATE, not injected: a profile without the credentials
-    // plugin must still have working GIS tools, and the answer only matters when
-    // a query actually runs (runtime contract #19).
-    this.profiles = new PostgisProfiles(this.config, this.credentialsResolver())
+    // `?? {}`: a row that configures nothing must produce an empty profile set
+    // rather than throwing inside the loader.
+    this.config = postgisConfigSchema.parse(config ?? {})
+    // \`credentials\` is read LATE and PER CALL, not injected and not captured:
+    // this row may activate BEFORE the credentials row does, and a profile without
+    // the credentials plugin must still have working GIS tools (contract #19).
+    // Capturing the service here made every profile report "unavailable" in a real
+    // instance while the same configuration passed every unit test.
+    this.profiles = new PostgisProfiles(this.config, () => this.credentialsResolver())
   }
 
   /** How many profiles are configured, for a settings surface. */
@@ -53,9 +57,15 @@ export class PostgisService extends Service {
     return this.profiles.names.length
   }
 
-  /** The credentials service as this plugin needs it, when one is mounted. */
+  /** The credentials service as this plugin needs it, at the moment it is needed. */
   private credentialsResolver(): CredentialsResolver | undefined {
-    return this.ctx.get('credentials') as CredentialsResolver | undefined
+    try {
+      return this.ctx.get('credentials') as CredentialsResolver | undefined
+    } catch {
+      // \`ctx.get\` throws for a name no row ever provided; "this profile mounts no
+      // credentials service" is a normal state, not an error.
+      return undefined
+    }
   }
 
   /**
@@ -76,11 +86,5 @@ export class PostgisService extends Service {
 /** Service name, for tests and diagnostics. */
 export const POSTGIS_SERVICE = 'gisPostgis'
 
-/**
- * Mount the service.
- * @param ctx - owning context.
- * @param config - the row's configuration.
- */
-export function apply(ctx: Context, config: PostgisConfig): void {
-  ctx.plugin(PostgisService, config)
-}
+// No `apply` export: the default-exported Service IS the plugin (see the note at
+// the top). Exporting both invited the loader to pick the wrong one.

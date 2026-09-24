@@ -31,7 +31,12 @@ export const postgisProfileSchema = z.strictObject({
    * database, or a password already supplied by the environment. It never means
    * "the password is written here".
    */
-  credential: z.string().min(1).optional(),
+  // The regex is the credentials document's OWN, enforced here because the failure
+  // otherwise surfaces far away: a hyphenated reference makes the credentials
+  // plugin fail to parse its document, which fails the entire startup with a
+  // message about a plugin the user never configured. Found in a real instance,
+  // not in a unit test.
+  credential: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/u, 'a credential reference must start with a letter or underscore and contain only letters, digits and underscores').optional(),
   /** Whether to negotiate TLS. */
   ssl: z.boolean().default(false),
   /** How long to wait for a connection before failing. */
