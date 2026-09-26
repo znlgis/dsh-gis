@@ -30,6 +30,10 @@ export const GIS_ERROR_CODES = [
   // limits
   'LIMIT_EXCEEDED',
   'CACHE_QUOTA_EXCEEDED',
+  // network sources (T3.2+): a database is a dataset whose failures are its own
+  'PG_CONNECT_FAILED',
+  'PG_QUERY_FAILED',
+  'SQL_TIMEOUT',
 ] as const
 
 /** One member of the taxonomy. */

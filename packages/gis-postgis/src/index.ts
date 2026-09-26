@@ -10,8 +10,23 @@
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { postgisConfigSchema, type PostgisConfig } from './config.ts'
 import { PostgisProfiles, type CredentialsResolver } from './profiles.ts'
+import { PostgisConnections } from './connect.ts'
+import { readCatalog, readLayerMetadata, type CatalogLayer } from './catalog.ts'
 
 export { postgisConfigSchema, postgisProfileSchema, type PostgisConfig, type PostgisProfileSettings } from './config.ts'
+export { PostgisConnection, PostgisConnections, type Queryable } from './connect.ts'
+export {
+  CATALOG_SQL,
+  estimatedExtentSql,
+  literal,
+  readCatalog,
+  readLayerMetadata,
+  toLayer,
+  type CatalogLayer,
+  type EstimatedExtent,
+  type LayerMetadata,
+  type SpatialKind,
+} from './catalog.ts'
 export {
   PostgisProfileError,
   PostgisProfiles,
@@ -34,6 +49,8 @@ export default class PostgisService extends Service {
   readonly config: PostgisConfig
   /** The profile resolver, published for the tasks that will connect. */
   readonly profiles: PostgisProfiles
+  /** Open connections by profile; closed with the plugin. */
+  private readonly connections: PostgisConnections
 
   /**
    * @param ctx - owning context; the service is published as \`ctx.gisPostgis\`.
@@ -50,6 +67,9 @@ export default class PostgisService extends Service {
     // Capturing the service here made every profile report "unavailable" in a real
     // instance while the same configuration passed every unit test.
     this.profiles = new PostgisProfiles(this.config, () => this.credentialsResolver())
+    this.connections = new PostgisConnections(this.profiles)
+    // The pool owns sockets; without a teardown they outlive the plugin.
+    this.ctx.effect(() => () => this.close(), 'gis-postgis: connection pool')
   }
 
   /** How many profiles are configured, for a settings surface. */
@@ -80,6 +100,33 @@ export default class PostgisService extends Service {
   /** Every profile's safe summary. */
   async describeAll() {
     return await this.profiles.describeAll()
+  }
+
+  /**
+   * The catalogue of one profile: every spatial column, with row and extent
+   * ESTIMATES from the statistics (never `count(*)` -- see catalog.ts).
+   * @param profile - the profile name.
+   * @returns the layers, in schema/table/column order.
+   */
+  async catalog(profile: string) {
+    const connection = await this.connections.forProfile(profile)
+    return await readCatalog(connection)
+  }
+
+  /**
+   * One layer's metadata: its catalogue entry plus its estimated extent.
+   * @param profile - the profile name.
+   * @param layer - the layer to describe.
+   * @returns the metadata, with a reason when the extent is unknown.
+   */
+  async layerMetadata(profile: string, layer: CatalogLayer) {
+    const connection = await this.connections.forProfile(profile)
+    return await readLayerMetadata(connection, layer)
+  }
+
+  /** Close every open connection; also the plugin's teardown. */
+  async close(): Promise<void> {
+    await this.connections.closeAll()
   }
 }
 

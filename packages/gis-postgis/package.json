@@ -22,6 +22,7 @@
   "license": "MIT",
   "dependencies": {
     "@znlgis/dsh-gis-core": "workspace:^",
+    "pg": "^8.23.0",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
@@ -31,6 +32,7 @@
     "@deepseek-ai/cordis": "^4.0.4",
     "@deepseek-ai/dsh-credentials": "0.1.7-rc.1",
     "@deepseek-ai/dsh-credentials-local": "0.1.7-rc.1",
-    "@types/node": "^24.0.0"
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1"
   }
 }
