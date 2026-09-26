@@ -12,9 +12,23 @@ import { postgisConfigSchema, type PostgisConfig } from './config.ts'
 import { PostgisProfiles, type CredentialsResolver } from './profiles.ts'
 import { PostgisConnections } from './connect.ts'
 import { readCatalog, readLayerMetadata, type CatalogLayer } from './catalog.ts'
+import { readPage, type PageRequest } from './query.ts'
 
 export { postgisConfigSchema, postgisProfileSchema, type PostgisConfig, type PostgisProfileSettings } from './config.ts'
 export { PostgisConnection, PostgisConnections, type Queryable } from './connect.ts'
+export {
+  buildPageSql,
+  normalizeLimit,
+  normalizeOffset,
+  orderKeyOf,
+  PAGE_LIMITS,
+  readPage,
+  readPrimaryKey,
+  toFeature,
+  type Page,
+  type PageFeature,
+  type PageRequest,
+} from './query.ts'
 export {
   CATALOG_SQL,
   estimatedExtentSql,
@@ -122,6 +136,19 @@ export default class PostgisService extends Service {
   async layerMetadata(profile: string, layer: CatalogLayer) {
     const connection = await this.connections.forProfile(profile)
     return await readLayerMetadata(connection, layer)
+  }
+
+  /**
+   * One page of features from a layer (T3.3): bound LIMIT/OFFSET, ordered, with
+   * geometry encoded by the DATABASE.
+   * @param profile - the profile name.
+   * @param layer - the layer to read.
+   * @param request - page size and offset.
+   * @returns the page.
+   */
+  async page(profile: string, layer: CatalogLayer, request: PageRequest = {}) {
+    const connection = await this.connections.forProfile(profile)
+    return await readPage(connection, layer, request)
   }
 
   /** Close every open connection; also the plugin's teardown. */

@@ -223,6 +223,21 @@ export function literal(value: string): string {
   return "'" + value.split("'").join("''") + "'"
 }
 
+/**
+ * Quote an IDENTIFIER (a table, schema or column name).
+ *
+ * Identifiers cannot be bound as parameters -- `LIMIT $1` works, `FROM $1` does
+ * not -- so a name that reaches SQL text must be quoted here. These names come
+ * from the catalogue rather than from a user, but "from the catalogue" is not the
+ * same as "safe": PostgreSQL allows a table called `we"ird`, and only doubling the
+ * quotes keeps it one identifier.
+ * @param name - the raw identifier.
+ * @returns the quoted identifier.
+ */
+export function quoteIdent(name: string): string {
+  return '"' + name.split('"').join('""') + '"'
+}
+
 /** The driver's extent row. */
 interface ExtentRow {
   readonly extent: string | null

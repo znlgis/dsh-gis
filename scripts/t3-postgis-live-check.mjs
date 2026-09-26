@@ -123,6 +123,54 @@ try {
   const timeout = await connection.query('SHOW statement_timeout')
   check(String(timeout.rows[0]?.statement_timeout) === '15s', 'the statement cap from the profile is in force', JSON.stringify(timeout.rows[0]))
 
+  // ---- T3.3: pages --------------------------------------------------------------
+  const { readPage } = pgis
+  const first = await readPage(recorder, cities, { limit: 5 })
+  check(first.features.length === 5, 'a page carries the requested number of features', String(first.features.length))
+  check(first.orderBy === 'id', 'a table WITH a primary key is ordered by it', String(first.orderBy))
+  check(first.hasMore === true, 'a full page says more may follow')
+  const firstIds = first.features.map(feature => feature.properties.id)
+  check(firstIds.every(id => typeof id === 'number'), 'attribute values cross as JSON-safe values', JSON.stringify(firstIds))
+  const point = first.features[0]?.geometry
+  check(point !== null && typeof point === 'object' && point.type === 'Point' && Array.isArray(point.coordinates), 'geometry crosses as GeoJSON, encoded by the DATABASE', JSON.stringify(point).slice(0, 120))
+  const props = Object.keys(first.features[0]?.properties ?? {})
+  check(!props.includes('geom'), 'the spatial column is not duplicated into the properties', JSON.stringify(props))
+  check(!props.includes('__geometry'), 'the geometry carrier column does not leak into the properties', JSON.stringify(props))
+
+  const second = await readPage(recorder, cities, { limit: 5, offset: 5 })
+  const secondIds = second.features.map(feature => feature.properties.id)
+  const overlap = secondIds.filter(id => firstIds.includes(id))
+  check(overlap.length === 0, 'the second page does not repeat the first (the page is ORDERED)', JSON.stringify({ first: firstIds, second: secondIds }))
+
+  const noPk = await readPage(recorder, parcels, { limit: 3 })
+  check(noPk.orderBy === 'ctid', 'a table WITHOUT a primary key falls back to ctid and SAYS so', String(noPk.orderBy))
+  check(noPk.features.length === 3, 'and it still pages', String(noPk.features.length))
+
+  const geogPage = await readPage(recorder, geog, { limit: 2 })
+  check(geogPage.features[0]?.geometry !== null && geogPage.features[0]?.geometry?.type === 'Polygon', 'a GEOGRAPHY column pages too (cast to geometry for encoding)', JSON.stringify(geogPage.features[0]?.geometry ?? null).slice(0, 120))
+
+  const over = await readPage(recorder, cities, { limit: 5000 }).then(() => 'allowed', error => String(error.message))
+  check(/at most 1000/u.test(over), 'an over-large page is REFUSED, not silently clamped', String(over).slice(0, 140))
+
+  // ---- T3.3: the statement cap, on a REAL slow query ----------------------------
+  const slowConfig = postgisConfigSchema.parse({
+    profiles: { slow: { host: HOST, port: PORT, database: DATABASE, user: USER, credential: 'pg_live', statementTimeoutMs: 500 } },
+  })
+  const slowProfiles = new PostgisProfiles(slowConfig, () => ({
+    resolve: async () => ({ value: PASSWORD }),
+    describe: async () => ({ configured: true }),
+  }))
+  const slowConnections = new PostgisConnections(slowProfiles)
+  const slowConnection = await slowConnections.forProfile('slow')
+  const began = Date.now()
+  const slow = await slowConnection.query('SELECT pg_sleep(3)').then(() => undefined, error => error)
+  const elapsed = Date.now() - began
+  check(slow?.code === 'SQL_TIMEOUT', 'a slow query is reported as SQL_TIMEOUT', slow?.code ?? String(slow))
+  check(elapsed < 2500, 'and it was cut off by the SERVER, not waited out', String(elapsed) + ' ms')
+  const slowWrite = await slowConnection.query('CREATE TABLE ' + SCHEMA + '.should_not_exist_either (id int)').then(() => 'allowed', error => String(error.message))
+  check(/read-only|read only/iu.test(String(slowWrite)), 'the second profile is read-only too', String(slowWrite).slice(0, 120))
+  await slowConnections.closeAll()
+
   await connections.closeAll()
 } catch (error) {
   failures.push('the run threw')
