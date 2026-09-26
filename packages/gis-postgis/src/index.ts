@@ -13,9 +13,21 @@ import { PostgisProfiles, type CredentialsResolver } from './profiles.ts'
 import { PostgisConnections } from './connect.ts'
 import { readCatalog, readLayerMetadata, type CatalogLayer } from './catalog.ts'
 import { readPage, type PageRequest } from './query.ts'
+import { readTile, type TileRequest } from './mvt.ts'
 
 export { postgisConfigSchema, postgisProfileSchema, type PostgisConfig, type PostgisProfileSettings } from './config.ts'
 export { PostgisConnection, PostgisConnections, type Queryable } from './connect.ts'
+export {
+  buildTileSql,
+  MAX_FEATURES_PER_TILE,
+  normalizeTile,
+  readTile,
+  TILE_BUFFER,
+  TILE_EXTENT,
+  tileLayerName,
+  type Tile,
+  type TileRequest,
+} from './mvt.ts'
 export {
   buildPageSql,
   normalizeLimit,
@@ -149,6 +161,20 @@ export default class PostgisService extends Service {
   async page(profile: string, layer: CatalogLayer, request: PageRequest = {}) {
     const connection = await this.connections.forProfile(profile)
     return await readPage(connection, layer, request)
+  }
+
+  /**
+   * One vector tile, built by the DATABASE (T3.4): `ST_AsMVTGeom` + `ST_AsMVT`.
+   * No GDAL, no temporary file, no second geometry pipeline.
+   * @param profile - the profile name.
+   * @param layer - the layer to tile.
+   * @param request - the tile address.
+   * @param columns - attribute columns to carry into the tile.
+   * @returns the tile; empty data when nothing intersects.
+   */
+  async tile(profile: string, layer: CatalogLayer, request: TileRequest, columns: readonly string[] = []) {
+    const connection = await this.connections.forProfile(profile)
+    return await readTile(connection, layer, request, columns)
   }
 
   /** Close every open connection; also the plugin's teardown. */

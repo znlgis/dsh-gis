@@ -33,6 +33,132 @@ const USER = process.env.GIS_PG_USER ?? 'postgres'
 const PASSWORD = process.env.GIS_PG_PASSWORD ?? 'postgres'
 const DATABASE = process.env.GIS_PG_DATABASE ?? 'postgres'
 const SCHEMA = 'dsh_gis_fixture'
+/**
+ * A minimal Mapbox Vector Tile reader, in the check rather than in a dependency.
+ *
+ * "The database returned some bytes" is not evidence that the bytes are a TILE.
+ * This decodes the protobuf far enough to name the layer, count its features and
+ * see a real geometry command, which is what makes the assertion about a vector
+ * tile rather than about a byte array.
+ * @param bytes - the tile.
+ * @returns what the tile says about itself.
+ */
+function decodeMvt(bytes) {
+  let at = 0
+  /** Read one varint. */
+  const varint = () => {
+    let result = 0
+    let shift = 0
+    for (;;) {
+      const byte = bytes[at]
+      at += 1
+      result += (byte & 0x7f) * 2 ** shift
+      if ((byte & 0x80) === 0) return result
+      shift += 7
+    }
+  }
+  /** Read a length-delimited field's bytes. */
+  const sized = () => {
+    const length = varint()
+    const slice = bytes.subarray(at, at + length)
+    at += length
+    return slice
+  }
+  const layers = []
+  while (at < bytes.length) {
+    const tag = varint()
+    const field = tag >> 3
+    const wire = tag & 7
+    if (field === 3 && wire === 2) layers.push(decodeLayer(sized()))
+    else if (wire === 2) sized()
+    else if (wire === 0) varint()
+    else if (wire === 5) at += 4
+    else if (wire === 1) at += 8
+    else break
+  }
+  return { layers }
+
+  /** Decode one layer message. */
+  function decodeLayer(slice) {
+    let cursor = 0
+    let name = ''
+    let extent = 0
+    let features = 0
+    let firstType
+    let firstGeometryCommands = 0
+    const keys = []
+    const read = () => {
+      let result = 0
+      let shift = 0
+      for (;;) {
+        const byte = slice[cursor]
+        cursor += 1
+        result += (byte & 0x7f) * 2 ** shift
+        if ((byte & 0x80) === 0) return result
+        shift += 7
+      }
+    }
+    const take = () => {
+      const length = read()
+      const part = slice.subarray(cursor, cursor + length)
+      cursor += length
+      return part
+    }
+    while (cursor < slice.length) {
+      const tag = read()
+      const field = tag >> 3
+      const wire = tag & 7
+      if (field === 1 && wire === 2) name = Buffer.from(take()).toString('utf8')
+      else if (field === 2 && wire === 2) {
+        const feature = decodeFeature(take())
+        if (features === 0) {
+          firstType = feature.type
+          firstGeometryCommands = feature.geometryCommands
+        }
+        features += 1
+      } else if (field === 3 && wire === 2) keys.push(Buffer.from(take()).toString('utf8'))
+      else if (field === 5 && wire === 0) extent = read()
+      else if (wire === 2) take()
+      else if (wire === 0) read()
+      else if (wire === 5) cursor += 4
+      else if (wire === 1) cursor += 8
+      else break
+    }
+    return { name, extent, features, keys, firstType, firstGeometryCommands }
+  }
+
+  /** Decode one feature message, far enough to see its type and geometry. */
+  function decodeFeature(slice) {
+    let cursor = 0
+    let type
+    let geometryCommands = 0
+    const read = () => {
+      let result = 0
+      let shift = 0
+      for (;;) {
+        const byte = slice[cursor]
+        cursor += 1
+        result += (byte & 0x7f) * 2 ** shift
+        if ((byte & 0x80) === 0) return result
+        shift += 7
+      }
+    }
+    while (cursor < slice.length) {
+      const tag = read()
+      const field = tag >> 3
+      const wire = tag & 7
+      if (field === 3 && wire === 0) type = read()
+      else if (field === 4 && wire === 2) geometryCommands = read()
+      else if (wire === 2) { const length = read(); cursor += length }
+      else if (wire === 0) read()
+      else if (wire === 5) cursor += 4
+      else if (wire === 1) cursor += 8
+      else break
+    }
+    return { type, geometryCommands }
+  }
+}
+
 const failures = []
 
 /** Record one assertion. */
@@ -170,6 +296,37 @@ try {
   const slowWrite = await slowConnection.query('CREATE TABLE ' + SCHEMA + '.should_not_exist_either (id int)').then(() => 'allowed', error => String(error.message))
   check(/read-only|read only/iu.test(String(slowWrite)), 'the second profile is read-only too', String(slowWrite).slice(0, 120))
   await slowConnections.closeAll()
+
+
+  // ---- T3.4: server-side tiles --------------------------------------------------
+  const { readTile } = pgis
+  // The fixture sits near 100E/30N; zoom 6 covers it in one tile.
+  const tileX = Math.floor(((100.5 + 180) / 360) * 2 ** 6)
+  const latRad = (30.5 * Math.PI) / 180
+  const tileY = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * 2 ** 6)
+  const tile = await readTile(recorder, cities, { z: 6, x: tileX, y: tileY }, ['name'])
+  check(tile.data.length > 0, 'the database produced a non-empty tile', String(tile.data.length) + ' bytes')
+  const decoded = decodeMvt(tile.data)
+  check(decoded.layers.length === 1, 'the tile contains exactly one layer', JSON.stringify(decoded.layers.map(layer => layer.name)))
+  check(decoded.layers[0]?.name === 'dsh_gis_fixture.cities', 'the layer is named after its source', String(decoded.layers[0]?.name))
+  check(decoded.layers[0]?.extent === 4096, 'the tile declares the extent we asked for', String(decoded.layers[0]?.extent))
+  // The fixture spans 100.1..104 E, so THIS z=6 tile (95.6..101.25 E) holds only the
+  // western part of it: asserting 40 would be asserting my arithmetic, not the tile.
+  check((decoded.layers[0]?.features ?? 0) > 0, 'the tile carries features', String(decoded.layers[0]?.features))
+  const coarse = decodeMvt((await readTile(recorder, cities, { z: 2, x: 3, y: 1 })).data)
+  check(coarse.layers[0]?.features === 40, 'a coarser tile over the same data holds every feature', String(coarse.layers[0]?.features))
+  check(decoded.layers[0]?.firstType === 1, 'the first feature is a POINT (type 1)', String(decoded.layers[0]?.firstType))
+  check((decoded.layers[0]?.firstGeometryCommands ?? 0) >= 2, 'and it carries real geometry commands', String(decoded.layers[0]?.firstGeometryCommands))
+  check(decoded.layers[0]?.keys.includes('name'), 'the requested attribute travelled into the tile', JSON.stringify(decoded.layers[0]?.keys))
+
+  const empty = await readTile(recorder, cities, { z: 6, x: 0, y: 0 })
+  check(empty.data.length === 0, 'a tile with nothing in it is EMPTY, not an error', String(empty.data.length))
+
+  const noSrid = await readTile(recorder, { ...cities, srid: 0 }, { z: 6, x: tileX, y: tileY }).then(() => undefined, error => error)
+  check(noSrid?.code === 'CRS_UNKNOWN', 'a layer with no SRID is refused rather than guessed at', String(noSrid?.code))
+
+  const tiled = sent.filter(statement => /ST_AsMVT/iu.test(statement))
+  check(tiled.length >= 1, 'tiles are built by the DATABASE (ST_AsMVT in the traffic)', String(tiled.length))
 
   await connections.closeAll()
 } catch (error) {

@@ -1,0 +1,26 @@
+feat: T3.4 — vector tiles built by the database, with the index kept usable
+
+mvt.ts builds one SQL statement: ST_TileEnvelope -> ST_AsMVTGeom -> ST_AsMVT.
+
+The decision that matters is in the WHERE clause. The obvious intersection test
+transforms every ROW into 3857, which makes the GiST index unusable and turns a
+tile into a table scan; transforming the TILE ENVELOPE into the layer's CRS
+instead keeps && index-friendly. A unit test asserts exactly that shape, and the
+live check asserts ST_AsMVT appears in the traffic.
+
+A layer with no declared SRID is REFUSED (CRS_UNKNOWN) rather than assumed to be
+4326: a projected dataset placed at plausible-looking wrong coordinates is worse
+than a clear error. An empty tile is zero bytes, which is what ST_AsMVT returns,
+and that is asserted too.
+
+Verified on the live server (check:postgis-live is now 42 assertions):
+- the tile decodes -- the check carries its OWN minimal MVT reader, so the claim
+  is "this is a vector tile with our layer, our extent, a POINT feature with real
+  geometry commands and our attribute", not "some bytes came back"
+- a coarser tile over the same data holds all 40 fixture features, while the z=6
+  tile holds the 12 that actually fall inside it
+- "not GDAL" is proven twice: the path issues one SQL statement, and the package's
+  dependency list contains no GDAL package at all
+
+30 unit tests in the package (5 new), 226 node tests + 1 skipped, 13 web tests,
+bundle contract OK.
