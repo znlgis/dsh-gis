@@ -24,7 +24,8 @@
     "check:mapstate": "node scripts/t2-mapstate-check.mjs",
     "check:postgis": "node scripts/t3-postgis-check.mjs",
     "check:postgis-live": "node scripts/t3-postgis-live-check.mjs",
-    "check:gdb": "node scripts/t3-gdb-check.mjs"
+    "check:gdb": "node scripts/t3-gdb-check.mjs",
+    "check:postgis-tools": "node scripts/t3-postgis-tools-check.mjs"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",

@@ -12,6 +12,8 @@ import { postgisConfigSchema, type PostgisConfig } from './config.ts'
 import { PostgisProfiles, type CredentialsResolver } from './profiles.ts'
 import { PostgisConnections } from './connect.ts'
 import { readCatalog, readLayerMetadata, type CatalogLayer } from './catalog.ts'
+import { createPostgisHandler } from './handler.ts'
+import { postgisOpener } from './opener.ts'
 import { readPage, type PageRequest } from './query.ts'
 import { readTile, type TileRequest } from './mvt.ts'
 
@@ -29,6 +31,8 @@ export {
   type TileRequest,
 } from './mvt.ts'
 export { compileFilter, MAX_TERMS, type CompiledFilter } from './filter.ts'
+export { createPostgisHandler, layerNameOf, type PostgisDataSource } from './handler.ts'
+export { parsePostgisAddress, POSTGIS_SCHEME, postgisOpener, type PostgisAddress } from './opener.ts'
 export {
   buildPageSql,
   normalizeLimit,
@@ -98,6 +102,19 @@ export default class PostgisService extends Service {
     this.connections = new PostgisConnections(this.profiles)
     // The pool owns sockets; without a teardown they outlive the plugin.
     this.ctx.effect(() => () => this.close(), 'gis-postgis: connection pool')
+    // The seam into the tools. `gis` is injected OPTIONALLY for the same reason as
+    // the credentials service: a profile without gis-core must still load this row,
+    // and the answer only matters when a dataset is actually read (contract #19).
+    this.ctx.inject(['gis'], (gisCtx) => {
+      gisCtx.effect(
+        () => gisCtx.gis.registerOpener(postgisOpener),
+        'gis-postgis: postgis: opener',
+      )
+      gisCtx.effect(
+        () => gisCtx.gis.registerHandler(createPostgisHandler(this.connections)),
+        'gis-postgis: postgis handler',
+      )
+    })
   }
 
   /** How many profiles are configured, for a settings surface. */
