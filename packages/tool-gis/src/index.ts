@@ -131,6 +131,7 @@ export function apply(ctx: Context): void {
     parameters: {
       path: { type: 'string', description: 'Path to a data file to open first.' },
       id: { type: 'string', description: 'Id of a dataset registered earlier.' },
+      layer: { type: 'string', description: 'Layer name, needed when the dataset holds several (gis_inspect lists them).' },
       where: { type: 'string', description: 'Attribute filter, e.g. "pop > 1000 AND name LIKE \'B%\'".' },
       bbox: { type: 'string', description: 'Spatial window as "west,south,east,north" in EPSG:4326.' },
       limit: { type: 'number', description: 'Maximum rows to return (default 20, max 500).' },
@@ -148,6 +149,7 @@ export function apply(ctx: Context): void {
       }
       const fields = args.fields === undefined ? undefined : args.fields.split(',').map(f => f.trim()).filter(f => f.length > 0)
       const result = await ctx.gis.query(dataset.id, {
+        ...(args.layer === undefined ? {} : { layer: args.layer }),
         ...(args.where === undefined ? {} : { where: args.where }),
         ...(args.bbox === undefined ? {} : { bbox: parseBbox(args.bbox) }),
         limit,
@@ -199,6 +201,7 @@ export function apply(ctx: Context): void {
     parameters: {
       path: { type: 'string', description: 'Path to a data file to open first.' },
       id: { type: 'string', description: 'Id of a dataset registered earlier.' },
+      layer: { type: 'string', description: 'Layer name, needed when the dataset holds several (gis_inspect lists them).' },
       width: { type: 'number', description: 'Image width in pixels (default 900, max 2000).' },
       height: { type: 'number', description: 'Image height in pixels (default 600, max 2000).' },
       bbox: { type: 'string', description: 'Extent to draw as "west,south,east,north"; defaults to the dataset extent.' },
@@ -238,7 +241,10 @@ export function apply(ctx: Context): void {
         }
       }
 
-      const inspection = await ctx.gis.inspect(dataset.id)
+      // The LAYER travels with both calls: describing one layer and then drawing
+      // another would frame the picture on one extent and fill it with the other's
+      // features -- a wrong map that looks like a right one.
+      const inspection = await ctx.gis.inspect(dataset.id, args.layer)
       const width = Math.min(Math.max(Math.round(args.width ?? 900), 64), 2000)
       const height = Math.min(Math.max(Math.round(args.height ?? 600), 64), 2000)
       const bbox = args.bbox === undefined ? inspection.bbox : parseBbox(args.bbox)
@@ -246,7 +252,12 @@ export function apply(ctx: Context): void {
         throw new GisError('DATASET_UNREADABLE', 'this dataset reported no extent, so there is nothing to frame; pass bbox explicitly')
       }
 
-      const page = await ctx.gis.query(dataset.id, { limit: 500, offset: 0, geometry: 'geojson' })
+      const page = await ctx.gis.query(dataset.id, {
+        ...(args.layer === undefined ? {} : { layer: args.layer }),
+        limit: 500,
+        offset: 0,
+        geometry: 'geojson',
+      })
       const features = page.rows.map(row => ({ attributes: row.attributes, geometry: row.geometry as GeoJsonGeometry | undefined }))
         .filter((feature): feature is { attributes: typeof feature.attributes; geometry: GeoJsonGeometry } => feature.geometry !== undefined)
       if (features.length === 0) {

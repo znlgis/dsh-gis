@@ -71,6 +71,53 @@ try {
     .then(() => undefined, error => error)
   check(String(refusal?.message ?? '').includes('gdb.read.too-old'), 'an old GDAL is refused by KEY, not by a sentence', String(refusal?.message ?? '').slice(0, 100))
   check(asked.length === 0, 'and the binary was never invoked', JSON.stringify(asked))
+
+  // ---- T3.6: every feature class is browsable ------------------------------------
+  const { createGdalHandler } = gates
+  check(typeof createGdalHandler === 'function', 'the GDAL handler is exported from the built package')
+
+  // A real runtime: the same slice the service satisfies, backed by the same
+  // binaries. The handler is exercised directly, so this is our code + real GDAL
+  // with no host in between.
+  const runtime = {
+    run: async (request) => {
+      const [program, ...argv] = request.argv
+      const result = await run(program, argv)
+      return { exitCode: result.code, stdout: result.stdout, stderr: '' }
+    },
+  }
+  const handler = createGdalHandler(runtime)
+  const multi = {
+    id: 'ds_multi',
+    kind: 'gdb',
+    title: 'multi.gdb',
+    dir: join(REPO, 'tests', 'fixtures', 'multi.gdb'),
+    layers: [{ name: 'multi.gdb' }],
+  }
+
+  const all = await handler.inspect(multi)
+  const names = all.layers.map(layer => layer.name).sort()
+  check(names.length === 2, 'a multi-layer geodatabase reports EVERY feature class', JSON.stringify(names))
+  check(JSON.stringify(names) === JSON.stringify(['cities', 'projected_areas']), 'and they are the fixture layers', JSON.stringify(names))
+  check(all.issues.some(issue => issue.code === 'LAYER_AMBIGUOUS'), 'and it says that a layer must be chosen', JSON.stringify(all.issues.map(issue => issue.code)))
+
+  for (const name of names) {
+    const one = await handler.inspect(multi, name)
+    check(one.layers.length === 1 && one.layers[0].name === name, 'layer ' + name + ' can be described on its own')
+    const page = await handler.query(multi, { layer: name, limit: 3, offset: 0, geometry: 'geojson' })
+    check(page.rows.length > 0, 'layer ' + name + ' can be READ (features came back)', String(page.rows.length))
+    check(page.rows.every(row => row.geometry !== undefined && row.geometry !== null), 'layer ' + name + ' returns geometry', JSON.stringify(page.rows[0]?.geometry ?? null).slice(0, 80))
+  }
+
+  const missing = await handler.inspect(multi, 'no_such_layer').then(() => undefined, error => error)
+  check(missing?.code === 'LAYER_NOT_FOUND', 'an unknown layer name is refused by CODE', String(missing?.code))
+
+  // A container with several layers and no layer named is REFUSED rather than
+  // guessed at: reading whichever layer happens to be first is the kind of answer
+  // that looks right and is not.
+  const ambiguous = await handler.query(multi, { limit: 1, offset: 0, geometry: 'geojson' }).then(() => undefined, error => error)
+  check(ambiguous?.code === 'LAYER_AMBIGUOUS', 'a layer-less query on a container is refused by CODE', String(ambiguous?.code))
+
 } catch (error) {
   failures.push('the run threw')
   console.log('  FAIL  the run threw -- ' + String(error).split('\n').slice(0, 3).join(' | '))

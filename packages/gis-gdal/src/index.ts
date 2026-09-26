@@ -21,6 +21,10 @@ declare module '@deepseek-ai/dsh-jobs' {
 import { basename } from 'node:path'
 // T3.5's gates and diagnostics. Exported from the package entry so they are part of
 // the built artifact -- and so T3.6 can ask the same questions the settings card does.
+// The handler is exported so it can be exercised against real GDAL without a
+// host: the mapping from ogrinfo output is the part worth testing, and it does
+// not need a Cordis context around it.
+export { createGdalHandler, type GdalRuntime } from './handler.ts'
 export {
   GDB_MIN_READ,
   GDB_MIN_WRITE,

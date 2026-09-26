@@ -82,10 +82,14 @@ export function createGdalHandler(runtime: GdalRuntime): GisFormatHandler {
 
     async inspect(dataset, layer) {
       const document = await ogrinfo(dataset, true)
-      const layers = document.layers ?? []
-      if (layer !== undefined && !layers.some(one => one.name === layer)) {
+      const all = document.layers ?? []
+      if (layer !== undefined && !all.some(one => one.name === layer)) {
         throw new GisError('LAYER_NOT_FOUND', `dataset ${dataset.id} has no layer named ${layer}`)
       }
+      // Asking about ONE layer must describe THAT layer: an inspect that returned
+      // every layer's extent and fields for a named request would describe a
+      // container while looking like it described a layer.
+      const layers = layer === undefined ? all : all.filter(one => one.name === layer)
       const issues: GisIssue[] = []
       if (layers.length > 1 && layer === undefined) {
         issues.push({
@@ -142,6 +146,20 @@ export function createGdalHandler(runtime: GdalRuntime): GisFormatHandler {
     },
 
     async query(dataset, request) {
+      // A CONTAINER with several layers and no layer named is refused, not guessed
+      // at. ogr2ogr's own answer to that request is an error with an empty message
+      // (learned from the multi-layer fixture); the honest answer is a code that
+      // says which choice is missing.
+      if (request.layer === undefined) {
+        const document = await ogrinfo(dataset, true)
+        const layers = document.layers ?? []
+        if (layers.length > 1) {
+          throw new GisError(
+            'LAYER_AMBIGUOUS',
+            `dataset ${dataset.id} holds ${String(layers.length)} layers; name one with \`layer\` (gis_inspect lists them)`,
+          )
+        }
+      }
       // ogr2ogr emits GeoJSON; the tested GeoJSON reader does the rest.
       const result = await runtime.run({
         argv: ['ogr2ogr', '-f', 'GeoJSON', '/vsistdout/', targetOf(dataset), ...(request.layer === undefined ? [] : [request.layer])],
