@@ -19,6 +19,25 @@ declare module '@deepseek-ai/dsh-jobs' {
   }
 }
 import { basename } from 'node:path'
+// T3.5's gates and diagnostics. Exported from the package entry so they are part of
+// the built artifact -- and so T3.6 can ask the same questions the settings card does.
+export {
+  GDB_MIN_READ,
+  GDB_MIN_WRITE,
+  listGdbLayers,
+  meetsGate,
+  parseGdalVersion,
+  parseOgrInfo,
+  probeGdbSupport,
+  readDiagnostic,
+  writeDiagnostic,
+  type GdbDiagnostic,
+  type GdbDiagnosticKey,
+  type GdbEnvironment,
+  type GdbLayer,
+  type GdalRunner,
+  type GdalVersion,
+} from './gdb.ts'
 import { delimiter } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
