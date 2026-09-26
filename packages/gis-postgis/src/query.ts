@@ -21,6 +21,7 @@
  */
 import { GisError } from '@znlgis/dsh-gis-core'
 import { quoteIdent, type CatalogLayer } from './catalog.ts'
+import { compileFilter, type CompiledFilter } from './filter.ts'
 import type { Queryable } from './connect.ts'
 
 /** How many features one page may carry, and how many it carries by default. */
@@ -30,6 +31,12 @@ export const PAGE_LIMITS = { default: 100, max: 1000 } as const
 export interface PageRequest {
   /** Features per page; defaults to {@link PAGE_LIMITS.default}. */
   readonly limit?: number
+  /**
+   * A `field OP value` filter joined by AND/OR. Compiled to SQL with BOUND values
+   * against a whitelist of this layer's columns (see filter.ts) -- user input never
+   * becomes SQL text.
+   */
+  readonly where?: string
   /** Features to skip. */
   readonly offset?: number
   /** Columns to return besides the geometry; all columns when omitted. */
@@ -79,7 +86,12 @@ export function orderKeyOf(primaryKey: string | undefined): string {
  * @param request - page size and offset.
  * @returns SQL text with $1/$2 bound.
  */
-export function buildPageSql(layer: CatalogLayer, primaryKey: string | undefined, request: PageRequest = {}): string {
+export function buildPageSql(
+  layer: CatalogLayer,
+  primaryKey: string | undefined,
+  request: PageRequest = {},
+  filter: CompiledFilter = { sql: '', values: [], terms: 0 },
+): string {
   const limit = normalizeLimit(request.limit)
   const offset = normalizeOffset(request.offset)
   const columns = request.columns === undefined || request.columns.length === 0
@@ -93,6 +105,9 @@ export function buildPageSql(layer: CatalogLayer, primaryKey: string | undefined
   return [
     'SELECT ' + columns + ', ' + geometry + ' AS __geometry',
     'FROM ' + quoteIdent(layer.schema) + '.' + quoteIdent(layer.table),
+    // The filter arrives already compiled: its identifiers were whitelisted and its
+    // values are $n placeholders, so nothing here is user text.
+    ...filter.sql.length === 0 ? [] : ['WHERE ' + filter.sql],
     'ORDER BY ' + quoteIdent(orderKeyOf(primaryKey)),
     'LIMIT ' + String(limit) + ' OFFSET ' + String(offset),
   ].join('\n')
@@ -157,6 +172,30 @@ export async function readPrimaryKey(client: Queryable, schema: string, table: s
 }
 
 /**
+ * The columns of one relation, as the DATABASE reports them.
+ *
+ * This is the whitelist a filter is compiled against. Reading it from the database
+ * means the set cannot be influenced by the request being filtered.
+ * @param client - a connected client or pool.
+ * @param layer - the layer whose columns are wanted.
+ * @returns the column names.
+ */
+export async function readColumnNames(client: Queryable, layer: CatalogLayer): Promise<readonly string[]> {
+  const result = await client.query(
+    [
+      'SELECT a.attname AS column_name',
+      'FROM pg_attribute a',
+      'JOIN pg_class c ON c.oid = a.attrelid',
+      'JOIN pg_namespace n ON n.oid = c.relnamespace',
+      'WHERE n.nspname = $1 AND c.relname = $2 AND a.attnum > 0 AND NOT a.attisdropped',
+      'ORDER BY a.attnum',
+    ].join('\n'),
+    [layer.schema, layer.table],
+  )
+  return (result.rows as unknown as readonly { column_name: string }[]).map(row => String(row.column_name))
+}
+
+/**
  * Read one page of features.
  * @param client - a connected client or pool.
  * @param layer - the layer to read.
@@ -167,8 +206,14 @@ export async function readPage(client: Queryable, layer: CatalogLayer, request: 
   const limit = normalizeLimit(request.limit)
   const offset = normalizeOffset(request.offset)
   const primaryKey = await readPrimaryKey(client, layer.schema, layer.table)
-  const sql = buildPageSql(layer, primaryKey, { ...request, limit, offset })
-  const result = await client.query(sql)
+  // The whitelist is the CATALOGUE's column list, read from the database rather
+  // than from the request: a caller cannot widen it by naming a column that the
+  // layer does not have.
+  const filter = request.where === undefined
+    ? { sql: '', values: [], terms: 0 }
+    : compileFilter(request.where, await readColumnNames(client, layer))
+  const sql = buildPageSql(layer, primaryKey, { ...request, limit, offset }, filter)
+  const result = await client.query(sql, [...filter.values])
   const rows = result.rows as unknown as readonly Readonly<Record<string, unknown>>[]
   const features = rows.map(row => toFeature(row, layer.column))
   const columns = rows.length === 0 ? [] : Object.keys(rows[0] as Record<string, unknown>)

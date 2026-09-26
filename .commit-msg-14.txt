@@ -1,0 +1,34 @@
+feat: T3.7 — a filter that cannot be steered, proven against the live database
+
+Two absolute rules in packages/gis-postgis/src/filter.ts:
+
+1. No VALUE is ever interpolated. Every literal becomes $n, so a value holding a
+   quote, a semicolon or the word DROP is just a value -- the database never
+   parses it.
+2. No IDENTIFIER is used unless the caller's whitelist has it. A column name
+   cannot be bound (SQL has no placeholder for one), so the only safe treatment is
+   to require it to be a column of the layer. An unknown name is refused BY NAME,
+   with the available columns listed: a filter that silently ignores an unknown
+   column returns rows the caller did not ask for.
+
+The whitelist comes from the DATABASE (pg_attribute), not from the request, so a
+caller cannot widen it by naming a column that does not exist.
+
+The grammar is deliberately the one the pure-JS provider already accepts -- field
+OP literal joined by AND/OR, parentheses refused -- so one syntax means the same
+thing on a GeoJSON file and on a PostGIS table.
+
+Verified on the live server (check:postgis-live is now 58 assertions):
+- the filter arrives as $1 and the VALUE (20000) is absent from the SQL text
+- name = 'a'; DROP TABLE ...cities; --' matches nothing AND the table still holds
+  its 40 rows afterwards
+- a column outside the whitelist is refused by name; a tautology (1 = 1) is
+  refused rather than executed; LIKE works and is bound
+
+One divergence recorded honestly: an attempt to smuggle a tautology through a
+quoted string is REFUSED rather than bound as a strange value, because the
+AND/OR splitter is quote-blind -- exactly as it is in the pure-JS path, which is
+what keeps the two dialects meaning the same thing.
+
+13 new unit tests, 255 node tests + 1 skipped, 13 web tests, bundle contract OK,
+check:gdb green.

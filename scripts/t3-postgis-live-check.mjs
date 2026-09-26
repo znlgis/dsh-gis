@@ -328,6 +328,41 @@ try {
   const tiled = sent.filter(statement => /ST_AsMVT/iu.test(statement))
   check(tiled.length >= 1, 'tiles are built by the DATABASE (ST_AsMVT in the traffic)', String(tiled.length))
 
+
+  // ---- T3.7: the filter, against a real database ---------------------------------
+  const { compileFilter, readColumnNames } = pgis
+  const columns = await readColumnNames(connection, cities)
+  check(columns.includes('name') && columns.includes('population'), 'the whitelist comes from the DATABASE', JSON.stringify(columns.slice(0, 6)))
+  check(!columns.includes('__geometry'), 'and it contains no synthetic column', JSON.stringify(columns))
+
+  const filtered = await readPage(recorder, cities, { where: 'population > 20000', limit: 50 })
+  check(filtered.features.length > 0 && filtered.features.length < 40, 'a filter selects a subset', String(filtered.features.length))
+  check(filtered.features.every(feature => Number(feature.properties.population) > 20000), 'and every row satisfies it', JSON.stringify(filtered.features.map(f => f.properties.population).slice(0, 5)))
+
+  const like = await readPage(recorder, cities, { where: "name LIKE 'city-1%'", limit: 50 })
+  check(like.features.length === 11, 'LIKE works and is bound', String(like.features.length))
+
+  // The two proofs that matter: the TEXT sent to the server carries a placeholder,
+  // and an injection attempt changes nothing.
+  const filterSql = sent.filter(statement => statement.includes('population')).pop()
+  check(filterSql !== undefined && filterSql.includes('$1'), 'the filter reaches the server as a PLACEHOLDER', String(filterSql ?? '').slice(-70))
+  check(filterSql !== undefined && !filterSql.includes('20000'), 'and the value is NOT in the SQL text', String(filterSql ?? '').slice(-70))
+
+  const before = await connection.query('SELECT count(*)::int AS n FROM ' + SCHEMA + '.cities').then(result => result.rows[0].n, () => -1)
+  const injected = await readPage(recorder, cities, { where: "name = 'a'; DROP TABLE " + SCHEMA + ".cities; --'", limit: 50 })
+  check(injected.features.length === 0, 'a statement-terminator value matches nothing', String(injected.features.length))
+  const after = await connection.query('SELECT count(*)::int AS n FROM ' + SCHEMA + '.cities').then(result => result.rows[0].n, () => -1)
+  check(after === before && before === 40, 'and the table is untouched', JSON.stringify({ before, after }))
+
+  const notAColumn = await readPage(recorder, cities, { where: 'secret = 1', limit: 5 }).then(() => undefined, error => error)
+  check(/not a column/u.test(String(notAColumn?.message ?? '')), 'a column outside the whitelist is refused BY NAME', String(notAColumn?.message ?? '').slice(0, 110))
+
+  const tautology = await readPage(recorder, cities, { where: '1 = 1', limit: 5 }).then(() => undefined, error => error)
+  check(/not a plain column/u.test(String(tautology?.message ?? '')), 'a tautology is refused, not executed', String(tautology?.message ?? '').slice(0, 110))
+
+  const compiled = compileFilter('id = 1', columns)
+  check(compiled.sql === '("id" = $1)' && compiled.values.length === 1, 'the compiler is reachable through the package', JSON.stringify(compiled))
+
   await connections.closeAll()
 } catch (error) {
   failures.push('the run threw')

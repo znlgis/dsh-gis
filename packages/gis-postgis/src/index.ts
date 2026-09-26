@@ -28,12 +28,14 @@ export {
   type Tile,
   type TileRequest,
 } from './mvt.ts'
+export { compileFilter, MAX_TERMS, type CompiledFilter } from './filter.ts'
 export {
   buildPageSql,
   normalizeLimit,
   normalizeOffset,
   orderKeyOf,
   PAGE_LIMITS,
+  readColumnNames,
   readPage,
   readPrimaryKey,
   toFeature,
